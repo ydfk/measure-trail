@@ -1,0 +1,33 @@
+name: measuretrail
+
+services:
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "21000:21000"
+    environment:
+      MEASURETRAIL_ENV: ${MEASURETRAIL_ENV:-production}
+      MEASURETRAIL_API_PORT: "21000"
+      MEASURETRAIL_PUBLIC_BASE_URL: ${MEASURETRAIL_PUBLIC_BASE_URL:-http://localhost:21000}
+      MEASURETRAIL_SQLITE_PATH: /app/data/measuretrail.sqlite
+      MEASURETRAIL_SQLITE_BUSY_TIMEOUT_MS: "5000"
+    volumes:
+      - measuretrail-data:/app/data
+      - measuretrail-log:/app/log
+      - measuretrail-backups:/app/backups
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:21000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  measuretrail-data:
+  measuretrail-log:
+  measuretrail-backups:

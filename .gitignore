@@ -1,0 +1,39 @@
+.DS_Store
+
+# 本机代理与编辑器配置
+.claude/settings.local.json
+.codex/hooks.json
+.impeccable/config.local.json
+
+# 私密配置
+.env
+.env.*
+!.env.example
+**/config/*.local.yaml
+**/config/*.local.yml
+
+# SQLite 数据、WAL 与备份（不得提交真实健康数据）
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+backend/data/
+backend/log/
+backups/
+
+# Go
+backend/bin/
+backend/tmp/
+backend/coverage.out
+
+# Xcode / Swift
+DerivedData/
+*.xcuserstate
+**/xcuserdata/
+ios/.build/
+
+# Web（未来）
+web/node_modules/
+web/dist/

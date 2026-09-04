@@ -1,0 +1,24 @@
+name: iOS
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run unit and UI tests
+        env:
+          DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+        run: >-
+          xcodebuild -project MeasureTrail.xcodeproj -scheme MeasureTrail
+          -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+          test CODE_SIGNING_ALLOWED=NO
