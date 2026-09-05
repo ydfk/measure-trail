@@ -20,14 +20,14 @@ struct APIClient: Sendable {
         }
     }
 
-    private let baseURL: URL
+    private let baseURL: URL?
 
-    init(baseURL: URL = AppConfiguration.apiBaseURL) {
+    init(baseURL: URL? = AppConfiguration.apiBaseURL) {
         self.baseURL = baseURL
     }
 
     func health() async throws {
-        guard let url = URL(string: "/api/health", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/health", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         let (data, httpResponse) = try await execute(URLRequest(url: url))
         guard (200...299).contains(httpResponse.statusCode) else { throw responseError(data, statusCode: httpResponse.statusCode, fallback: "服务器健康检查未通过。") }
         let response = try JSONDecoder().decode(HealthResponse.self, from: data)
@@ -110,7 +110,7 @@ struct APIClient: Sendable {
 
     func upsertMeasurement(date: String, weightG: Int, waistMM: Int?, note: String, mutationID: UUID, accessToken: String) async throws -> MeasurementResponse {
         struct Payload: Encodable { let weightG: Int; let waistMM: Int?; let note: String; let clientMutationId: String }
-        guard let url = URL(string: "/api/v1/measurements/by-date/\(date)", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/v1/measurements/by-date/\(date)", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -127,7 +127,7 @@ struct APIClient: Sendable {
     }
 
     func deleteMeasurement(id: String, expectedVersion: Int, mutationID: UUID, accessToken: String) async throws {
-        guard let url = URL(string: "/api/v1/measurements/\(id)", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/v1/measurements/\(id)", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -140,7 +140,7 @@ struct APIClient: Sendable {
 
     func updateMeasurement(id: String, weightG: Int, waistMM: Int?, note: String, expectedVersion: Int, mutationID: UUID, accessToken: String) async throws -> MeasurementResponse {
         struct Payload: Encodable { let weightG: Int; let waistMM: Int?; let note: String; let expectedVersion: Int; let clientMutationId: String }
-        guard let url = URL(string: "/api/v1/measurements/\(id)", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/v1/measurements/\(id)", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -152,7 +152,7 @@ struct APIClient: Sendable {
     }
 
     func measurement(id: String, accessToken: String) async throws -> MeasurementChange {
-        guard let url = URL(string: "/api/v1/measurements/\(id)", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/v1/measurements/\(id)", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, httpResponse) = try await authorizedData(for: request, accessToken: accessToken)
@@ -161,7 +161,7 @@ struct APIClient: Sendable {
     }
 
     func measurement(recordedOn: String, accessToken: String) async throws -> MeasurementChange {
-        guard let endpoint = URL(string: "/api/v1/measurements", relativeTo: baseURL), var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: true) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let endpoint = URL(string: "/api/v1/measurements", relativeTo: baseURL), var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: true) else { throw APIError.invalidEndpoint }
         components.queryItems = [
             URLQueryItem(name: "from", value: recordedOn),
             URLQueryItem(name: "to", value: recordedOn),
@@ -180,7 +180,7 @@ struct APIClient: Sendable {
     }
 
     func listMeasurementChanges(cursor: String?, accessToken: String) async throws -> MeasurementChangePage {
-        guard let endpoint = URL(string: "/api/v1/measurement-changes", relativeTo: baseURL), var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: true) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let endpoint = URL(string: "/api/v1/measurement-changes", relativeTo: baseURL), var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: true) else { throw APIError.invalidEndpoint }
         var queryItems = [URLQueryItem(name: "limit", value: "100")]
         if let cursor, !cursor.isEmpty { queryItems.append(URLQueryItem(name: "cursor", value: cursor)) }
         components.queryItems = queryItems
@@ -195,7 +195,7 @@ struct APIClient: Sendable {
     }
 
     func profile(accessToken: String) async throws -> ProfileResponse {
-        guard let url = URL(string: "/api/v1/profile", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/v1/profile", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, httpResponse) = try await authorizedData(for: request, accessToken: accessToken)
@@ -207,7 +207,7 @@ struct APIClient: Sendable {
 
     func sessions(accessToken: String) async throws -> [SessionInfo] {
         struct Response: Decodable { let sessions: [SessionInfo] }
-        guard let url = URL(string: "/api/v1/auth/sessions", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/v1/auth/sessions", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, httpResponse) = try await authorizedData(for: request, accessToken: accessToken)
@@ -216,7 +216,7 @@ struct APIClient: Sendable {
     }
 
     func revokeSession(id: String, accessToken: String) async throws {
-        guard let url = URL(string: "/api/v1/auth/sessions/\(id)", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/v1/auth/sessions/\(id)", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
@@ -226,7 +226,7 @@ struct APIClient: Sendable {
 
     func updateProfile(heightMM: Int?, targetWeightG: Int?, preferredUnit: String, timezone: String, accessToken: String) async throws -> ProfileResponse {
         struct Payload: Encodable { let heightMM: Int?; let targetWeightG: Int?; let preferredUnit: String; let timezone: String }
-        guard let url = URL(string: "/api/v1/profile", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/v1/profile", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -240,7 +240,7 @@ struct APIClient: Sendable {
     }
 
     func deleteAccount(accessToken: String) async throws {
-        guard let url = URL(string: "/api/v1/account", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/v1/account", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
@@ -249,7 +249,7 @@ struct APIClient: Sendable {
     }
 
     func exportCSV(accessToken: String) async throws -> URL {
-        guard let url = URL(string: "/api/v1/account/export.csv", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: "/api/v1/account/export.csv", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, httpResponse) = try await authorizedData(for: request, accessToken: accessToken)
@@ -260,7 +260,7 @@ struct APIClient: Sendable {
     }
 
     private func send<Body: Encodable, Response: Decodable>(path: String, body: Body) async throws -> Response {
-        guard let url = URL(string: path, relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: path, relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -276,7 +276,7 @@ struct APIClient: Sendable {
     }
 
     private func sendAuthorized<Body: Encodable, Response: Decodable>(path: String, body: Body, accessToken: String) async throws -> Response {
-        guard let url = URL(string: path, relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        guard let baseURL, let url = URL(string: path, relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -304,34 +304,6 @@ struct APIClient: Sendable {
     func responseError(_ data: Data, statusCode: Int, fallback: String) -> APIError {
         let message = (try? JSONDecoder().decode(Problem.self, from: data))?.detail ?? fallback
         return statusCode == 409 ? .conflict(message) : .rejected(message)
-    }
-}
-
-enum AppConfiguration {
-    static let apiBaseURLKey = "apiBaseURL"
-
-    static var apiBaseURL: URL {
-        let configured = UserDefaults.standard.string(forKey: apiBaseURLKey) ?? "https://measuretrail.invalid"
-        return URL(string: configured) ?? URL(string: "https://measuretrail.invalid")!
-    }
-
-    static var configuredAPIBaseURL: URL? {
-        guard let value = UserDefaults.standard.string(forKey: apiBaseURLKey) else { return nil }
-        return validatedAPIBaseURL(value)
-    }
-
-    static func validatedAPIBaseURL(_ value: String) -> URL? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed), url.scheme?.lowercased() == "https", url.host != nil,
-              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
-              url.path.isEmpty || url.path == "/" else { return nil }
-        return url
-    }
-
-    static func saveAPIBaseURL(_ url: URL) {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        components?.path = ""
-        UserDefaults.standard.set((components?.url ?? url).absoluteString, forKey: apiBaseURLKey)
     }
 }
 

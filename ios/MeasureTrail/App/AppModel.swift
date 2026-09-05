@@ -13,7 +13,6 @@ final class AppModel {
     init() {
         if ProcessInfo.processInfo.arguments.contains("-uiTestingResetOnboarding") {
             UserDefaults.standard.removeObject(forKey: Self.completedOnboardingKey)
-            UserDefaults.standard.removeObject(forKey: AppConfiguration.apiBaseURLKey)
             TokenStore().clear()
         }
         if !UserDefaults.standard.bool(forKey: Self.completedOnboardingKey) {

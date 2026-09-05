@@ -126,3 +126,20 @@ func validApplePrivateKey(t *testing.T) string {
 	}
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encoded}))
 }
+
+func TestRegistrationDefaultsClosedAndCanBeEnabled(t *testing.T) {
+	t.Setenv("MEASURETRAIL_REGISTRATION_ENABLED", "")
+	loaded, err := Load()
+	if err != nil || loaded.Auth.RegistrationEnabled {
+		t.Fatalf("注册应默认关闭: config=%v, error=%v", loaded.Auth.RegistrationEnabled, err)
+	}
+	t.Setenv("MEASURETRAIL_REGISTRATION_ENABLED", "true")
+	loaded, err = Load()
+	if err != nil || !loaded.Auth.RegistrationEnabled {
+		t.Fatalf("无法显式启用注册: error=%v", err)
+	}
+	t.Setenv("MEASURETRAIL_REGISTRATION_ENABLED", "invalid")
+	if _, err := Load(); err == nil {
+		t.Fatal("无效开关应返回配置错误")
+	}
+}

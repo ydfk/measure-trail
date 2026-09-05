@@ -91,8 +91,11 @@ type sessionOutput struct {
 }
 
 func RegisterRoutes(api huma.API, service *Service, notifier Notifier, appleVerifier AppleVerifier, appleTokenClient AppleTokenClient) {
-	huma.Register(api, huma.Operation{OperationID: "register", Method: http.MethodPost, Path: "/api/v1/auth/register", Summary: "注册账号", Tags: []string{"认证"}}, func(ctx context.Context, input *credentialsInput) (*struct{}, error) {
+	huma.Register(api, huma.Operation{OperationID: "register", Method: http.MethodPost, Path: "/api/v1/auth/register", Summary: "注册账号（默认关闭）", Errors: []int{http.StatusBadRequest, http.StatusForbidden, http.StatusServiceUnavailable}, Tags: []string{"认证"}}, func(ctx context.Context, input *credentialsInput) (*struct{}, error) {
 		verificationToken, err := service.Register(input.Body.Email, input.Body.Password)
+		if errors.Is(err, ErrRegistrationClosed) {
+			return nil, huma.Error403Forbidden(ErrRegistrationClosed.Error())
+		}
 		if err != nil {
 			return nil, huma.Error400BadRequest("无法创建账号")
 		}
@@ -129,8 +132,11 @@ func RegisterRoutes(api huma.API, service *Service, notifier Notifier, appleVeri
 		}
 		return outputSession(session), nil
 	})
-	huma.Register(api, huma.Operation{OperationID: "apple-login", Method: http.MethodPost, Path: "/api/v1/auth/apple", Summary: "使用 Apple 登录", Tags: []string{"认证"}}, func(ctx context.Context, input *appleCredentialInput) (*sessionOutput, error) {
+	huma.Register(api, huma.Operation{OperationID: "apple-login", Method: http.MethodPost, Path: "/api/v1/auth/apple", Summary: "使用 Apple 登录", Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusServiceUnavailable}, Tags: []string{"认证"}}, func(ctx context.Context, input *appleCredentialInput) (*sessionOutput, error) {
 		session, err := service.SignInWithApple(ctx, appleVerifier, appleTokenClient, input.Body.IdentityToken, input.Body.AuthorizationCode, input.Body.Nonce, input.Body.DeviceLabel)
+		if errors.Is(err, ErrRegistrationClosed) {
+			return nil, huma.Error403Forbidden(ErrRegistrationClosed.Error())
+		}
 		if errors.Is(err, ErrAppleUnavailable) {
 			return nil, huma.Error503ServiceUnavailable("Sign in with Apple 尚未配置")
 		}

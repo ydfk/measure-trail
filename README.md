@@ -17,7 +17,7 @@ MeasureTrail is a Chinese-first, privacy-conscious weight-tracking product being
 | --- | --- |
 | Product identity | MeasureTrail / 量迹 selected |
 | Repository | Local Git repository initialized; no remote configured yet |
-| iOS app | SwiftUI iOS 26 app builds for the simulator; authentication, offline cache/outbox, profile, recording, trends, conflict handling, export, and server connection setup are implemented |
+| iOS app | SwiftUI iOS 26 app builds for the simulator; authentication, offline cache/outbox, profile, recording, trends, conflict handling, export, and automatic server configuration are implemented |
 | Backend | Go API, SQLite migrations, authentication, data APIs, and static Docker configuration are implemented |
 | Web app | Reserved for a future phase; not implemented |
 
@@ -25,7 +25,7 @@ MeasureTrail is a Chinese-first, privacy-conscious weight-tracking product being
 
 - Record a daily weight, with optional waist measurement and note.
 - Provide trends, goals, BMI, history, and mobile-appropriate insights.
-- Support account registration, email/password authentication, Sign in with Apple, and future multi-client sync.
+- Support email/password authentication, Sign in with Apple, and future multi-client sync; public registration is temporarily closed.
 - Offer optional HealthKit integration, with the user retaining control over reading and writing health data.
 - Exclude CSV import and reminders from the current product scope.
 
@@ -56,4 +56,4 @@ The supplied `slimtrack.db` stays in the repository root only as local migration
 
 ## Development
 
-The iOS app asks for a self-hosted HTTPS service address before login and verifies `/api/health` before saving it. Simulator builds and 26 XCTest/UI tests are passing, including local conflict capture for both stale edits and an offline new device's same-day record, complete local cache cleanup on sign-out and account deletion, resolution rules, the HTTPS connection gate, dashboard record-count rendering, and automatic sync when network connectivity returns. Docker smoke validation is complete; final HTTPS deployment, HealthKit read/write, Sign in with Apple on device, cross-device conflict and remaining end-to-end UI tests, and App Store release gates remain open.
+The iOS app selects its server automatically: Debug simulators use `http://localhost:21000`, while devices and Release builds use `https://measure-api.ydfk.site`. Build configuration can override the address. Registration is hidden in iOS and disabled by default on the backend, including automatic Apple account creation. Simulator builds and 29 XCTest/UI tests are passing, including local conflict capture for both stale edits and an offline new device's same-day record, complete local cache cleanup on sign-out and account deletion, resolution rules, build environment selection and the login flow, dashboard record-count rendering, and automatic sync when network connectivity returns. Docker smoke validation is complete; final HTTPS deployment, HealthKit read/write, Sign in with Apple on device, cross-device conflict and remaining end-to-end UI tests, and App Store release gates remain open.

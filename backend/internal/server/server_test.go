@@ -24,7 +24,7 @@ func TestHealthRouteAndOpenAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开测试数据库: %v", err)
 	}
-	authService, err := auth.NewService(db, config.Auth{
+	authService, err := auth.NewService(db, config.Auth{RegistrationEnabled: true,
 		Issuer:        "measuretrail",
 		Audience:      "measuretrail-ios",
 		AccessSecret:  "01234567890123456789012345678901",
@@ -113,7 +113,7 @@ func TestAuthenticationRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开测试数据库: %v", err)
 	}
-	service, err := auth.NewService(db, config.Auth{
+	service, err := auth.NewService(db, config.Auth{RegistrationEnabled: true,
 		Issuer:        "measuretrail",
 		Audience:      "measuretrail-ios",
 		AccessSecret:  "01234567890123456789012345678901",
@@ -162,7 +162,7 @@ func TestAuthenticationRoutesRateLimitedByPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开测试数据库: %v", err)
 	}
-	service, err := auth.NewService(db, config.Auth{
+	service, err := auth.NewService(db, config.Auth{RegistrationEnabled: true,
 		Issuer:        "measuretrail",
 		Audience:      "measuretrail-ios",
 		AccessSecret:  "01234567890123456789012345678901",
@@ -199,7 +199,7 @@ func TestTrackingRoutesRequireOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开测试数据库: %v", err)
 	}
-	service, err := auth.NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	service, err := auth.NewService(db, config.Auth{RegistrationEnabled: true, Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
 	if err != nil {
 		t.Fatalf("创建认证服务: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestTrackingRoutesRejectStaleMeasurementVersionAcrossDeviceSessions(t *test
 	if err != nil {
 		t.Fatalf("打开测试数据库: %v", err)
 	}
-	service, err := auth.NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	service, err := auth.NewService(db, config.Auth{RegistrationEnabled: true, Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
 	if err != nil {
 		t.Fatalf("创建认证服务: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestHealthKitImportRouteRequiresAuthenticationAndReturnsSource(t *testing.T
 	if err != nil {
 		t.Fatalf("打开测试数据库: %v", err)
 	}
-	service, err := auth.NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	service, err := auth.NewService(db, config.Auth{RegistrationEnabled: true, Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
 	if err != nil {
 		t.Fatalf("创建认证服务: %v", err)
 	}
@@ -410,4 +410,29 @@ func (notifier *recordingNotifier) SendVerification(_ context.Context, email str
 
 func (*recordingNotifier) SendPasswordReset(context.Context, string, string) error {
 	return nil
+}
+
+func TestRegistrationRouteClosedByDefault(t *testing.T) {
+	db, err := database.Open(config.Database{Path: filepath.Join(t.TempDir(), "measuretrail.sqlite"), BusyTimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := auth.NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notifier := &recordingNotifier{}
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, notifier, nil)
+	response := request(t, app, http.MethodPost, "/api/v1/auth/register", `{"email":"new@example.com","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("关闭注册 status=%d", response.StatusCode)
+	}
+	if notifier.verificationToken != "" {
+		t.Fatal("关闭注册后不应发送验证邮件")
+	}
+	var count int64
+	if err := db.Table("users").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("账号数=%d, error=%v", count, err)
+	}
 }

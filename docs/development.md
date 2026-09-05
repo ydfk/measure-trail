@@ -26,6 +26,13 @@
 - 可在 `backend/` 中加载 `.env` 后运行 `go run ./cmd`，也可在仓库根目录运行 `docker compose up --build api`；Compose 会读取 `.env` 中的运行环境，不会将开发配置强制覆盖为生产配置。
 - 本地 HTTP origin 仅在开发环境允许；生产环境仍要求公网地址和所有 CORS origin 使用 HTTPS。
 
+## iOS 服务环境
+
+- Debug 模拟器默认连接 `http://localhost:21000`；Debug 真机及 Release 默认连接 `https://measure-api.ydfk.site`，登录页无需填写服务器。
+- 构建参数 `MEASURETRAIL_API_BASE_URL=https://测试服务域名` 可覆盖打包地址；Debug 也支持同名 Scheme 环境变量，Release 忽略运行时环境覆盖。
+- 仅 Debug 允许 localhost、回环或 `.local` 地址的 HTTP；真机连接本地开发机时通过 Scheme 设置开发机的 `.local` 地址，首次连接需允许本地网络。Release 必须使用 HTTPS。旧版 UserDefaults 手填地址不再参与选择。
+- 注册默认关闭，开发注册测试需显式设置 `MEASURETRAIL_REGISTRATION_ENABLED=true`；现有账号登录不受影响。
+
 ## 代码约定
 
 - Go 与 Swift 代码使用清晰、规模受控的模块；注释使用简体中文，仅解释不能从代码直接看出的意图。

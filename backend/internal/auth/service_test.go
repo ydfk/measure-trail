@@ -16,7 +16,7 @@ func TestRegisterVerifyLoginAndRefreshRotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库: %v", err)
 	}
-	service, err := NewService(db, config.Auth{
+	service, err := NewService(db, config.Auth{RegistrationEnabled: true,
 		Issuer:        "measuretrail",
 		Audience:      "measuretrail-ios",
 		AccessSecret:  "01234567890123456789012345678901",
@@ -78,7 +78,7 @@ func TestRevokeSessionRequiresOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库: %v", err)
 	}
-	service, err := NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	service, err := NewService(db, config.Auth{RegistrationEnabled: true, Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
 	if err != nil {
 		t.Fatalf("创建认证服务: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestDeleteAccountRevokesAllAuthenticationData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库: %v", err)
 	}
-	service, err := NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	service, err := NewService(db, config.Auth{RegistrationEnabled: true, Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
 	if err != nil {
 		t.Fatalf("创建认证服务: %v", err)
 	}
@@ -175,5 +175,39 @@ func TestDeleteAccountRevokesAllAuthenticationData(t *testing.T) {
 		if count != 0 {
 			t.Fatalf("删除后 %s 仍有 %d 条关联数据", table, count)
 		}
+	}
+}
+
+func TestClosedRegistrationPreservesExistingLogins(t *testing.T) {
+	db, err := database.Open(config.Database{Path: filepath.Join(t.TempDir(), "measuretrail.sqlite"), BusyTimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := config.Auth{RegistrationEnabled: true, Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"}
+	setup, err := NewService(db, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verification, err := setup.Register("existing@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setup.VerifyEmail(verification); err != nil {
+		t.Fatal(err)
+	}
+	settings.RegistrationEnabled = false
+	closed, err := NewService(db, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := closed.Register("new@example.com", "correct-horse-battery-staple"); !errors.Is(err, ErrRegistrationClosed) {
+		t.Fatalf("关闭注册后仍可开户: %v", err)
+	}
+	if _, err := closed.Login("existing@example.com", "correct-horse-battery-staple", "iPhone"); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Table("users").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("账号数=%d, error=%v", count, err)
 	}
 }

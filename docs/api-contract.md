@@ -40,6 +40,8 @@ Phase 2 至 Phase 4 的服务基础设施、认证、资料、记录、增量同
 
 Apple 登录由服务端校验 Apple 签名、发行方、受众、过期时间和一次性 nonce。生产部署必须配置 `MEASURETRAIL_APPLE_CLIENT_ID`；未配置时端点以 `503` 明确拒绝，不会降级为不验证的客户端登录。
 
+注册默认关闭：`POST /api/v1/auth/register` 返回 `403`，Apple 登录也仅允许已有绑定身份，首次开户返回 `403`。需要重新开放时设置 `MEASURETRAIL_REGISTRATION_ENABLED=true` 并重启服务；已有账号的邮箱登录、Apple 登录、密码重置和绑定不受影响。
+
 ### 资料、记录与统计
 
 - `GET` / `PATCH /api/v1/profile`

@@ -14,16 +14,18 @@ import (
 )
 
 var (
+	ErrRegistrationClosed = errors.New("暂未开放注册，请使用已有账号登录")
 	ErrInvalidCredentials = errors.New("邮箱或密码不正确")
 	ErrEmailNotVerified   = errors.New("邮箱尚未验证")
 	ErrInvalidToken       = errors.New("token 无效或已过期")
 )
 
 type Service struct {
-	db               *gorm.DB
-	tokens           *tokenManager
-	appleCredentials *appleCredentialStore
-	now              func() time.Time
+	registrationEnabled bool
+	db                  *gorm.DB
+	tokens              *tokenManager
+	appleCredentials    *appleCredentialStore
+	now                 func() time.Time
 }
 
 func (service *Service) ConfigureAppleCredentials(encodedKey string) error {
@@ -53,10 +55,13 @@ func NewService(db *gorm.DB, authConfig config.Auth) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{db: db, tokens: tokens, now: time.Now}, nil
+	return &Service{db: db, tokens: tokens, now: time.Now, registrationEnabled: authConfig.RegistrationEnabled}, nil
 }
 
 func (service *Service) Register(email string, password string) (string, error) {
+	if !service.registrationEnabled {
+		return "", ErrRegistrationClosed
+	}
 	email = normalizeEmail(email)
 	if email == "" || !passwordIsValid(password) {
 		return "", fmt.Errorf("邮箱或密码不符合要求")
@@ -161,6 +166,9 @@ func (service *Service) SignInWithApple(ctx context.Context, verifier AppleVerif
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Session{}, err
+	}
+	if !service.registrationEnabled {
+		return Session{}, ErrRegistrationClosed
 	}
 	if identity.Email == "" {
 		return Session{}, ErrAppleEmailRequired

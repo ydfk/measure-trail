@@ -33,10 +33,11 @@ type Database struct {
 }
 
 type Auth struct {
-	Issuer        string
-	Audience      string
-	AccessSecret  string
-	RefreshSecret string
+	RegistrationEnabled bool
+	Issuer              string
+	Audience            string
+	AccessSecret        string
+	RefreshSecret       string
 }
 
 type Mail struct {
@@ -60,6 +61,10 @@ type Apple struct {
 }
 
 func Load() (Config, error) {
+	registrationEnabled, err := strconv.ParseBool(value("MEASURETRAIL_REGISTRATION_ENABLED", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("MEASURETRAIL_REGISTRATION_ENABLED 必须是布尔值: %w", err)
+	}
 	environment := value("MEASURETRAIL_ENV", "development")
 	publicBaseURL := value("MEASURETRAIL_PUBLIC_BASE_URL", "http://localhost:21000")
 	corsOrigins, err := parseCORSOrigins(value("MEASURETRAIL_CORS_ORIGINS", publicBaseURL), strings.EqualFold(environment, "production"))
@@ -77,10 +82,11 @@ func Load() (Config, error) {
 			Path: value("MEASURETRAIL_SQLITE_PATH", "data/measuretrail.sqlite"),
 		},
 		Auth: Auth{
-			Issuer:        value("MEASURETRAIL_JWT_ISSUER", "measuretrail"),
-			Audience:      value("MEASURETRAIL_JWT_AUDIENCE", "measuretrail-ios"),
-			AccessSecret:  strings.TrimSpace(os.Getenv("MEASURETRAIL_JWT_ACCESS_SECRET")),
-			RefreshSecret: strings.TrimSpace(os.Getenv("MEASURETRAIL_JWT_REFRESH_SECRET")),
+			RegistrationEnabled: registrationEnabled,
+			Issuer:              value("MEASURETRAIL_JWT_ISSUER", "measuretrail"),
+			Audience:            value("MEASURETRAIL_JWT_AUDIENCE", "measuretrail-ios"),
+			AccessSecret:        strings.TrimSpace(os.Getenv("MEASURETRAIL_JWT_ACCESS_SECRET")),
+			RefreshSecret:       strings.TrimSpace(os.Getenv("MEASURETRAIL_JWT_REFRESH_SECRET")),
 		},
 		Mail: Mail{
 			Mode:     value("MEASURETRAIL_MAIL_MODE", "log"),

@@ -16,32 +16,29 @@ final class OnboardingUITests: XCTestCase {
     }
 
     @MainActor
-    func testServerSettingsRejectsNonHTTPSAddressBeforeNetworkRequest() {
+    func testLoginHasBrandAndNoRegistrationOrServerSetup() {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTestingResetOnboarding"]
         app.launch()
-
         app.buttons["继续"].tap()
-        XCTAssertTrue(app.buttons["设置量迹服务器"].waitForExistence(timeout: 5))
 
-        app.buttons["设置量迹服务器"].tap()
-        let address = app.textFields["server-address"]
-        XCTAssertTrue(address.waitForExistence(timeout: 5))
-        address.tap()
-        address.typeText("http://measuretrail.example.com")
-        app.buttons["连接并保存"].tap()
-
-        XCTAssertTrue(app.staticTexts["请输入有效的 HTTPS 基础地址，且不要包含路径、查询参数或账号信息。"].waitForExistence(timeout: 5))
-    }
-
-    @MainActor
-    func testSignInStaysDisabledUntilHTTPSServiceIsConnected() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-uiTestingResetOnboarding"]
-        app.launch()
-
-        app.buttons["继续"].tap()
-        XCTAssertTrue(app.staticTexts["请先设置并验证你的量迹服务器地址。"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.images["authentication-logo"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["注册"].exists)
+        XCTAssertFalse(app.segmentedControls["账号操作"].exists)
+        XCTAssertFalse(app.buttons["设置量迹服务器"].exists)
+        XCTAssertTrue(app.buttons["authentication-submit"].isHittable)
         XCTAssertFalse(app.buttons["authentication-submit"].isEnabled)
+
+        let email = app.textFields["authentication-email"]
+        email.tap()
+        email.typeText("existing@example.com")
+        let password = app.secureTextFields["authentication-password"]
+        password.tap()
+        password.typeText("correct-horse-battery-staple")
+        XCTAssertTrue(app.buttons["authentication-submit"].isEnabled)
+
+        app.swipeUp()
+        app.buttons["忘记密码？"].tap()
+        XCTAssertTrue(app.navigationBars["重置密码"].waitForExistence(timeout: 5))
     }
 }

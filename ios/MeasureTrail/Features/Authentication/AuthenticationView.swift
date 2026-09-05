@@ -3,167 +3,203 @@ import SwiftUI
 
 struct AuthenticationView: View {
     @Environment(AppModel.self) private var appModel
-    @State private var mode: Mode = .signIn
+    @Environment(\.colorScheme) private var colorScheme
+    @FocusState private var focusedField: Field?
     @State private var email = ""
     @State private var password = ""
     @State private var message: String?
+    @State private var appleMessage: String?
     @State private var isSubmitting = false
     @State private var appleNonce: String?
     @State private var showingPasswordReset = false
-    @State private var showingServerSettings = false
 
-    enum Mode: String, CaseIterable, Identifiable { case signIn, signUp; var id: Self { self } }
+    private enum Field { case email, password }
+    private var canSubmit: Bool {
+        !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && password.count >= 12 && !isSubmitting
+    }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                Spacer()
-                Image(systemName: "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 54, weight: .medium))
-                    .foregroundStyle(MeasureTrailStyle.ink)
-                    .accessibilityHidden(true)
-                VStack(spacing: 8) {
-                    Text("量迹").font(.largeTitle.weight(.bold))
-                    Text("记录变化，留住属于你的轨迹。")
-                        .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 36) {
+                    brandHeader
+                    VStack(alignment: .leading, spacing: 24) {
+                        Text("登录量迹")
+                            .font(.title2.bold())
+                            .accessibilityAddTraits(.isHeader)
+                        credentials
+                        if let message {
+                            Label(message, systemImage: "exclamationmark.circle")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Button { Task { await submit() } } label: {
+                            HStack(spacing: 10) {
+                                if isSubmitting { ProgressView().tint(.white) }
+                                Text(isSubmitting ? "正在登录…" : "登录")
+                                    .font(.headline)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 36)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.roundedRectangle(radius: 16))
+                        .controlSize(.large)
+                        .disabled(!canSubmit)
+                        .accessibilityIdentifier("authentication-submit")
+                    }
+                    appleLogin
                 }
-                Picker("操作", selection: $mode) {
-                    Text("登录").tag(Mode.signIn)
-                    Text("注册").tag(Mode.signUp)
-                }
-                .pickerStyle(.segmented)
-                .accessibilityLabel("账号操作")
-                VStack(spacing: 14) {
-                    TextField("邮箱", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("authentication-email")
-                    SecureField("密码（至少 12 位）", text: $password).textContentType(mode == .signIn ? .password : .newPassword)
-                }
-                .textFieldStyle(.roundedBorder)
-                .measureTrailActionSurface()
-                if let message { Text(message).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center) }
-                Button {
-                    showingServerSettings = true
-                } label: {
-                    Label(AppConfiguration.configuredAPIBaseURL == nil ? "设置量迹服务器" : "更改服务器", systemImage: "server.rack")
-                }
-                .font(.footnote)
-                Button(mode == .signIn ? "登录" : "创建账号") { Task { await submit() } }
-                    .buttonStyle(.borderedProminent)
-                    .tint(MeasureTrailStyle.ink)
-                    .controlSize(.large)
-                    .disabled(email.isEmpty || password.count < 12 || isSubmitting || AppConfiguration.configuredAPIBaseURL == nil)
-                    .accessibilityIdentifier("authentication-submit")
-                SignInWithAppleButton(.continue) { request in
-                    request.requestedScopes = [.email]
-                    request.nonce = appleNonce
-                } onCompletion: { result in
-                    Task { await completeAppleLogin(result) }
-                }
-                    .frame(height: 50)
-                    .accessibilityLabel("使用 Apple 登录")
-                    .disabled(appleNonce == nil || isSubmitting || AppConfiguration.configuredAPIBaseURL == nil)
-                Button("忘记密码？") { showingPasswordReset = true }.font(.footnote)
-                Spacer()
+                .frame(maxWidth: 440)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 28)
+                .padding(.top, 32)
+                .padding(.bottom, 32)
             }
-            .padding()
-            .task {
-                if AppConfiguration.configuredAPIBaseURL == nil { message = "请先设置并验证你的量迹服务器地址。" }
-                await prepareAppleNonce()
-            }
+            .scrollDismissesKeyboard(.interactively)
+            .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
+            .tint(colorScheme == .dark ? MeasureTrailStyle.blue : MeasureTrailStyle.ink)
+            .task { await prepareAppleNonce() }
             .sheet(isPresented: $showingPasswordReset) { PasswordResetSheet(email: email) }
-            .sheet(isPresented: $showingServerSettings, onDismiss: {
-                appleNonce = nil
-                Task { await prepareAppleNonce() }
-            }) { ServerSettingsView() }
+        }
+    }
+
+    private var brandHeader: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Image("BrandLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 96, height: 96)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .accessibilityLabel("量迹标志")
+                .accessibilityIdentifier("authentication-logo")
+            VStack(alignment: .leading, spacing: 10) {
+                Text("量迹").font(.largeTitle.bold())
+                Text("记录变化，留住属于你的轨迹。")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var credentials: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("邮箱").font(.subheadline.weight(.medium))
+                TextField("输入邮箱地址", text: $email, prompt: Text("输入邮箱地址").foregroundColor(Color(uiColor: .secondaryLabel)))
+                    .textContentType(.username)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused($focusedField, equals: .email)
+                    .submitLabel(.next)
+                    .onSubmit { focusedField = .password }
+                    .accessibilityLabel("邮箱")
+                    .accessibilityIdentifier("authentication-email")
+                    .loginInputSurface()
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("密码").font(.subheadline.weight(.medium))
+                SecureField("输入密码", text: $password, prompt: Text("输入密码").foregroundColor(Color(uiColor: .secondaryLabel)))
+                    .textContentType(.password)
+                    .focused($focusedField, equals: .password)
+                    .submitLabel(.go)
+                    .onSubmit { if canSubmit { Task { await submit() } } }
+                    .accessibilityLabel("密码")
+                    .accessibilityIdentifier("authentication-password")
+                    .loginInputSurface()
+            }
+            Button("忘记密码？") { showingPasswordReset = true }
+                .font(.subheadline)
+                .frame(minHeight: 44)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .disabled(isSubmitting)
+    }
+
+    private var appleLogin: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 16) {
+                Rectangle().fill(Color(uiColor: .separator)).frame(height: 0.5)
+                Text("或").font(.footnote).foregroundStyle(.secondary)
+                Rectangle().fill(Color(uiColor: .separator)).frame(height: 0.5)
+            }
+            SignInWithAppleButton(.signIn) { request in
+                request.requestedScopes = [.email]
+                request.nonce = appleNonce
+            } onCompletion: { result in
+                Task { await completeAppleLogin(result) }
+            }
+            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+            .id(colorScheme)
+            .frame(height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityLabel("使用 Apple 登录")
+            .disabled(appleNonce == nil || isSubmitting)
+            if let appleMessage {
+                Text(appleMessage).font(.footnote).foregroundStyle(.secondary)
+                Button("重试 Apple 登录") { Task { await prepareAppleNonce() } }
+                    .font(.footnote)
+                    .frame(minHeight: 44)
+                    .disabled(isSubmitting)
+            }
         }
     }
 
     private func submit() async {
-        guard AppConfiguration.configuredAPIBaseURL != nil else { message = "请先设置并验证你的量迹服务器地址。"; return }
+        guard canSubmit else { return }
+        focusedField = nil
         isSubmitting = true
+        message = nil
         defer { isSubmitting = false }
         do {
-            if mode == .signIn {
-                let session = try await APIClient().login(email: email, password: password)
-                try TokenStore().save(accessToken: session.accessToken, refreshToken: session.refreshToken)
-                appModel.didAuthenticate()
-            } else {
-                try await APIClient().register(email: email, password: password)
-                message = "账号已创建。请查收验证邮件后再登录。"
-            }
-        } catch {
-            message = error.localizedDescription
-        }
+            let session = try await APIClient().login(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
+            try TokenStore().save(accessToken: session.accessToken, refreshToken: session.refreshToken)
+            appModel.didAuthenticate()
+        } catch { message = error.localizedDescription }
     }
 
     private func prepareAppleNonce() async {
-        guard appleNonce == nil, AppConfiguration.configuredAPIBaseURL != nil else { return }
+        guard appleNonce == nil else { return }
+        appleMessage = nil
         do { appleNonce = try await APIClient().newAppleNonce() }
-        catch { message = "暂时无法准备 Apple 登录。" }
+        catch { appleMessage = "Apple 登录暂不可用，可使用邮箱登录。" }
     }
 
     private func completeAppleLogin(_ result: Result<ASAuthorization, Error>) async {
-        guard case .success(let authorization) = result, let credential = authorization.credential as? ASAuthorizationAppleIDCredential, let identityData = credential.identityToken, let identityToken = String(data: identityData, encoding: .utf8), let authorizationData = credential.authorizationCode, let authorizationCode = String(data: authorizationData, encoding: .utf8), let nonce = appleNonce else {
-            message = "Apple 登录未完成。"
-            await prepareAppleNonce()
+        guard case .success(let authorization) = result,
+              let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+              let identityData = credential.identityToken, let identityToken = String(data: identityData, encoding: .utf8),
+              let authorizationData = credential.authorizationCode, let authorizationCode = String(data: authorizationData, encoding: .utf8),
+              let nonce = appleNonce else {
+            if case .failure(let error) = result, (error as? ASAuthorizationError)?.code == .canceled { return }
+            appleMessage = "Apple 登录未完成，请重试。"
+            appleNonce = nil
             return
         }
         isSubmitting = true
+        message = nil
         appleNonce = nil
         defer { isSubmitting = false }
         do {
             let session = try await APIClient().loginWithApple(identityToken: identityToken, authorizationCode: authorizationCode, nonce: nonce)
             try TokenStore().save(accessToken: session.accessToken, refreshToken: session.refreshToken)
             appModel.didAuthenticate()
-        } catch { message = error.localizedDescription }
-        await prepareAppleNonce()
+        } catch {
+            message = error.localizedDescription
+            await prepareAppleNonce()
+        }
     }
 }
 
-struct ServerSettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var address = UserDefaults.standard.string(forKey: AppConfiguration.apiBaseURLKey) ?? ""
-    @State private var message: String?
-    @State private var isValidating = false
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("量迹服务器") {
-                    TextField("https://measuretrail.example.com", text: $address)
-                        .textContentType(.URL)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier("server-address")
-                    Text("请输入部署量迹服务的 HTTPS 基础地址，不要附加 /api 路径。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                Section {
-                    Button("连接并保存") { Task { await validateAndSave() } }
-                        .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidating)
-                }
-                if let message { Section { Label(message, systemImage: "exclamationmark.circle").foregroundStyle(.secondary) } }
-            }
-            .navigationTitle("服务器连接")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
-        }
-    }
-
-    private func validateAndSave() async {
-        guard let url = AppConfiguration.validatedAPIBaseURL(address) else {
-            message = "请输入有效的 HTTPS 基础地址，且不要包含路径、查询参数或账号信息。"
-            return
-        }
-        isValidating = true
-        defer { isValidating = false }
-        do {
-            try await APIClient(baseURL: url).health()
-            AppConfiguration.saveAPIBaseURL(url)
-            dismiss()
-        } catch {
-            message = "无法连接服务器：\(error.localizedDescription)"
-        }
+private extension View {
+    func loginInputSurface() -> some View {
+        padding(.horizontal, 16)
+            .padding(.vertical, 16)
+            .frame(minHeight: 54)
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 

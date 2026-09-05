@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -55,7 +56,7 @@ func TestAppleSignInConsumesServerNonce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开测试数据库: %v", err)
 	}
-	service, err := NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	service, err := NewService(db, config.Auth{RegistrationEnabled: true, Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
 	if err != nil {
 		t.Fatalf("创建认证服务: %v", err)
 	}
@@ -80,7 +81,7 @@ func TestAppleSignInStoresCredentialAndAccountDeletionRevokesIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开测试数据库: %v", err)
 	}
-	service, err := NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	service, err := NewService(db, config.Auth{RegistrationEnabled: true, Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
 	if err != nil {
 		t.Fatalf("创建认证服务: %v", err)
 	}
@@ -172,4 +173,40 @@ func signedAppleToken(t *testing.T, privateKey *rsa.PrivateKey, keyID string, au
 func exponentBytes(exponent int) []byte {
 	value := big.NewInt(int64(exponent)).Bytes()
 	return value
+}
+
+func TestClosedRegistrationAllowsExistingAppleIdentityOnly(t *testing.T) {
+	db, err := database.Open(config.Database{Path: t.TempDir() + "/measuretrail.sqlite", BusyTimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db, config.Auth{RegistrationEnabled: true, Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ConfigureAppleCredentials(base64.RawStdEncoding.EncodeToString([]byte("01234567890123456789012345678901"))); err != nil {
+		t.Fatal(err)
+	}
+	signIn := func(subject, email string) error {
+		nonce, err := service.NewAppleNonce()
+		if err != nil {
+			return err
+		}
+		_, err = service.SignInWithApple(context.Background(), fixedAppleVerifier{identity: AppleIdentity{Subject: subject, Email: email}}, fixedAppleTokenClient{}, "identity-token", "authorization-code", nonce, "iPhone")
+		return err
+	}
+	if err := signIn("existing-apple", "existing@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	service.registrationEnabled = false
+	if err := signIn("existing-apple", "existing@example.com"); err != nil {
+		t.Fatalf("已有 Apple 账号无法登录: %v", err)
+	}
+	if err := signIn("new-apple", "new@example.com"); !errors.Is(err, ErrRegistrationClosed) {
+		t.Fatalf("新 Apple 账号未被拒绝: %v", err)
+	}
+	var count int64
+	if err := db.Table("users").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("账号数=%d, error=%v", count, err)
+	}
 }
