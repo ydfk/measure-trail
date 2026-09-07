@@ -36,10 +36,6 @@ func TestLoadRejectsInsecureProductionConfiguration(t *testing.T) {
 	t.Setenv("MEASURETRAIL_PUBLIC_BASE_URL", "http://measuretrail.example.com")
 	t.Setenv("MEASURETRAIL_JWT_ACCESS_SECRET", strings.Repeat("a", 32))
 	t.Setenv("MEASURETRAIL_JWT_REFRESH_SECRET", strings.Repeat("b", 32))
-	t.Setenv("MEASURETRAIL_MAIL_MODE", "smtp")
-	t.Setenv("MEASURETRAIL_SMTP_HOST", "smtp.example.com")
-	t.Setenv("MEASURETRAIL_SMTP_FROM", "noreply@example.com")
-
 	if _, err := Load(); err == nil {
 		t.Fatal("HTTP 公网地址仍被生产配置接受")
 	}
@@ -84,9 +80,6 @@ func TestLoadRejectsInsecureProductionAppleEndpoint(t *testing.T) {
 	t.Setenv("MEASURETRAIL_CORS_ORIGINS", "https://web.measuretrail.example.com")
 	t.Setenv("MEASURETRAIL_JWT_ACCESS_SECRET", strings.Repeat("a", 32))
 	t.Setenv("MEASURETRAIL_JWT_REFRESH_SECRET", strings.Repeat("b", 32))
-	t.Setenv("MEASURETRAIL_MAIL_MODE", "smtp")
-	t.Setenv("MEASURETRAIL_SMTP_HOST", "smtp.example.com")
-	t.Setenv("MEASURETRAIL_SMTP_FROM", "noreply@example.com")
 	t.Setenv("MEASURETRAIL_APPLE_TEAM_ID", "TEAM123")
 	t.Setenv("MEASURETRAIL_APPLE_KEY_ID", "KEY123")
 	t.Setenv("MEASURETRAIL_APPLE_CLIENT_ID", "com.example.measuretrail")
@@ -105,10 +98,6 @@ func TestLoadRejectsInsecureProductionCORSOrigin(t *testing.T) {
 	t.Setenv("MEASURETRAIL_CORS_ORIGINS", "http://web.measuretrail.example.com")
 	t.Setenv("MEASURETRAIL_JWT_ACCESS_SECRET", strings.Repeat("a", 32))
 	t.Setenv("MEASURETRAIL_JWT_REFRESH_SECRET", strings.Repeat("b", 32))
-	t.Setenv("MEASURETRAIL_MAIL_MODE", "smtp")
-	t.Setenv("MEASURETRAIL_SMTP_HOST", "smtp.example.com")
-	t.Setenv("MEASURETRAIL_SMTP_FROM", "noreply@example.com")
-
 	if _, err := Load(); err == nil {
 		t.Fatal("生产环境 HTTP CORS origin 仍被接受")
 	}
@@ -140,5 +129,45 @@ func TestDefaultCredentialsCanBeOverridden(t *testing.T) {
 	t.Setenv("MEASURETRAIL_DEFAULT_PASSWORD", "123")
 	if _, err := Load(); err == nil {
 		t.Fatal("过短默认密码应返回配置错误")
+	}
+}
+
+func TestLoadDerivesPasskeyRelyingPartyFromPublicURL(t *testing.T) {
+	t.Setenv("MEASURETRAIL_PUBLIC_BASE_URL", "https://measure-trail.ydfk.site/")
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Passkey.RPID != "measure-trail.ydfk.site" || strings.Join(loaded.Passkey.Origins, ",") != "https://measure-trail.ydfk.site" {
+		t.Fatalf("Passkey 配置未从公网地址派生: %#v", loaded.Passkey)
+	}
+}
+
+func TestLoadRejectsInvalidPasskeyConfiguration(t *testing.T) {
+	t.Setenv("MEASURETRAIL_PASSKEY_RP_ID", "https://measure-trail.ydfk.site")
+	if _, err := Load(); err == nil {
+		t.Fatal("带协议的 Passkey RP ID 应被拒绝")
+	}
+	t.Setenv("MEASURETRAIL_PASSKEY_RP_ID", "measure-trail.ydfk.site")
+	t.Setenv("MEASURETRAIL_PASSKEY_CREDENTIAL_ENCRYPTION_KEY", "too-short")
+	if _, err := Load(); err == nil {
+		t.Fatal("无效 Passkey 加密密钥应被拒绝")
+	}
+}
+
+func TestLoadAcceptsProductionPasskeyConfiguration(t *testing.T) {
+	t.Setenv("MEASURETRAIL_ENV", "production")
+	t.Setenv("MEASURETRAIL_PUBLIC_BASE_URL", "https://measure-trail.ydfk.site")
+	t.Setenv("MEASURETRAIL_JWT_ACCESS_SECRET", strings.Repeat("a", 32))
+	t.Setenv("MEASURETRAIL_JWT_REFRESH_SECRET", strings.Repeat("b", 32))
+	t.Setenv("MEASURETRAIL_PASSKEY_CREDENTIAL_ENCRYPTION_KEY", base64.RawStdEncoding.EncodeToString([]byte("01234567890123456789012345678901")))
+	t.Setenv("MEASURETRAIL_IOS_APP_ID", "TEAM123.com.ydfk.MeasureTrail")
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("有效生产 Passkey 配置被拒绝: %v", err)
+	}
+	if loaded.Passkey.RPID != "measure-trail.ydfk.site" || loaded.Passkey.IOSAppID != "TEAM123.com.ydfk.MeasureTrail" {
+		t.Fatalf("生产 Passkey 配置错误: %#v", loaded.Passkey)
 	}
 }

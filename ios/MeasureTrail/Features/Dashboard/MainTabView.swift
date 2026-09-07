@@ -130,6 +130,7 @@ private struct SettingsView: View {
                 }
                 Section("账号") {
                     NavigationLink { AccountCredentialsView() } label: { Label("用户名与密码", systemImage: "person.badge.key") }
+                    NavigationLink { PasskeySettingsView() } label: { Label("Passkey", systemImage: "person.badge.key.fill") }
                     NavigationLink { SessionsView() } label: { Label("登录设备", systemImage: "laptopcomputer.and.iphone") }
                     Button("退出登录", role: .destructive) { Task { await signOut() } }
                     Button("导出 CSV") { Task { await exportCSV() } }

@@ -185,6 +185,7 @@ func TestDeleteAccountRevokesAllAuthenticationData(t *testing.T) {
 		{"INSERT INTO measurement_changes(user_id, measurement_id, changed_at) VALUES (?, 'measurement-delete-1', ?)", []any{userID, now}},
 		{"INSERT INTO client_mutations(user_id, mutation_id, measurement_id, created_at) VALUES (?, 'delete-account-mutation', 'measurement-delete-1', ?)", []any{userID, now}},
 		{"INSERT INTO legacy_imports(id, user_id, source_sha256, source_path, row_count, imported_at, report_json) VALUES ('legacy-delete-1', ?, 'sha256-delete-test', '/tmp/delete-test.sqlite', 1, ?, '{}')", []any{userID, now}},
+		{"INSERT INTO passkey_credentials(id, user_id, name, credential_id_hash, encrypted_credential, created_at, updated_at) VALUES ('passkey-delete-1', ?, '测试', 'hash-delete-test', x'01', ?, ?)", []any{userID, now, now}},
 	} {
 		if err := db.Exec(statement.query, statement.args...).Error; err != nil {
 			t.Fatalf("准备关联数据: %v", err)
@@ -202,7 +203,7 @@ func TestDeleteAccountRevokesAllAuthenticationData(t *testing.T) {
 	if _, err := service.UserIDFromAccessToken(session.AccessToken); !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("删除后 access token error = %v, want ErrInvalidToken", err)
 	}
-	for _, table := range []string{"profiles", "measurements", "measurement_changes", "client_mutations", "legacy_imports", "password_credentials", "auth_identities", "refresh_tokens", "email_tokens"} {
+	for _, table := range []string{"profiles", "measurements", "measurement_changes", "client_mutations", "legacy_imports", "passkey_credentials", "password_credentials", "auth_identities", "refresh_tokens", "email_tokens"} {
 		var count int
 		if err := db.Raw("SELECT COUNT(*) FROM "+table+" WHERE user_id = ?", userID).Row().Scan(&count); err != nil {
 			t.Fatalf("检查 %s: %v", table, err)

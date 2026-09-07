@@ -27,6 +27,11 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+	if appConfig.Passkey.CredentialEncryptionKey != "" {
+		if err := authService.ConfigurePasskeys(appConfig.Passkey); err != nil {
+			log.Fatal(err)
+		}
+	}
 	if err := authService.EnsureDefaultUser(appConfig.Auth.DefaultUsername, appConfig.Auth.DefaultPassword); err != nil {
 		log.Fatal(err)
 	}

@@ -1,6 +1,13 @@
 import Foundation
 
 enum AppConfiguration {
+    static var passkeyRelyingPartyID: String? {
+        let value = Bundle.main.object(forInfoDictionaryKey: "MeasureTrailPasskeyRPID") as? String
+        let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let normalized, !normalized.isEmpty, !normalized.contains("://"), !normalized.contains(":") else { return nil }
+        return normalized
+    }
+
     static var apiBaseURL: URL? {
         #if DEBUG
         resolveAPIBaseURL(

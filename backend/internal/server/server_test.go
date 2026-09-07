@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -76,6 +77,81 @@ func TestHealthRouteAndOpenAPI(t *testing.T) {
 	}
 	if _, ok := document.Paths["/api/v1/measurements/by-date/{date}"][strings.ToLower(http.MethodPut)].Responses["409"]; !ok {
 		t.Fatalf("OpenAPI 未声明创建同日记录的 409 响应")
+	}
+	for _, path := range []string{"/api/v1/auth/passkey/login/options", "/api/v1/auth/passkey/login/verify", "/api/v1/account/passkeys", "/api/v1/account/passkeys/registration/options", "/api/v1/account/passkeys/registration/verify"} {
+		if _, ok := document.Paths[path]; !ok {
+			t.Fatalf("OpenAPI 缺少 Passkey 路由 %s", path)
+		}
+	}
+}
+
+func TestPasskeyRoutesCreateRegistrationChallenge(t *testing.T) {
+	db, err := database.Open(config.Database{Path: filepath.Join(t.TempDir(), "measuretrail.sqlite"), BusyTimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := auth.NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.EnsureDefaultUser("admin", "111111"); err != nil {
+		t.Fatal(err)
+	}
+	passkeyConfig := config.Passkey{
+		RPID:                    "localhost",
+		RPName:                  "量迹测试",
+		Origins:                 []string{"http://localhost:21000"},
+		CredentialEncryptionKey: base64.RawStdEncoding.EncodeToString([]byte("01234567890123456789012345678901")),
+	}
+	if err := service.ConfigurePasskeys(passkeyConfig); err != nil {
+		t.Fatal(err)
+	}
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}, Passkey: passkeyConfig}, db, service, nil)
+	login := request(t, app, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"111111","deviceLabel":"iPhone"}`)
+	defer login.Body.Close()
+	var session struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if login.StatusCode != http.StatusOK || json.NewDecoder(login.Body).Decode(&session) != nil {
+		t.Fatalf("登录失败: %d", login.StatusCode)
+	}
+	registration := httptest.NewRequest(http.MethodPost, "/api/v1/account/passkeys/registration/options", strings.NewReader(`{"name":"我的 iPhone"}`))
+	registration.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	registration.Header.Set("Content-Type", "application/json")
+	response, err := app.Test(registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body := readBody(t, response)
+	if response.StatusCode != http.StatusOK || !strings.Contains(body, `"sessionId"`) || !strings.Contains(body, `"id":"localhost"`) {
+		t.Fatalf("Passkey 注册选项 status=%d body=%s", response.StatusCode, body)
+	}
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/v1/account/passkeys", nil)
+	listRequest.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	listResponse, err := app.Test(listRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listResponse.Body.Close()
+	if body := readBody(t, listResponse); listResponse.StatusCode != http.StatusOK || !strings.Contains(body, `"passkeys":[]`) {
+		t.Fatalf("Passkey 列表 status=%d body=%s", listResponse.StatusCode, body)
+	}
+}
+
+func TestAppleAppSiteAssociation(t *testing.T) {
+	app := New(config.Config{
+		App:     config.App{Port: "21000", PublicBaseURL: "https://measure-trail.ydfk.site"},
+		Passkey: config.Passkey{IOSAppID: "TEAM123.com.ydfk.MeasureTrail"},
+	}, nil, nil, nil)
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/.well-known/apple-app-site-association", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body := readBody(t, response)
+	if response.StatusCode != http.StatusOK || !strings.Contains(response.Header.Get("Content-Type"), "application/json") || !strings.Contains(body, "TEAM123.com.ydfk.MeasureTrail") {
+		t.Fatalf("AASA status=%d content-type=%q body=%s", response.StatusCode, response.Header.Get("Content-Type"), body)
 	}
 }
 

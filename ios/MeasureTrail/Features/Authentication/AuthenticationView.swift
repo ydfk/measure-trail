@@ -119,6 +119,7 @@ struct AuthenticationView: View {
                 Text("或").font(.footnote).foregroundStyle(.secondary)
                 Rectangle().fill(Color(uiColor: .separator)).frame(height: 0.5)
             }
+            passkeyLoginButton
             SignInWithAppleButton(.signIn) { request in
                 request.nonce = appleNonce
             } onCompletion: { result in
@@ -140,6 +141,19 @@ struct AuthenticationView: View {
         }
     }
 
+    private var passkeyLoginButton: some View {
+        Button { Task { await loginWithPasskey() } } label: {
+            Label("使用 Passkey 登录", systemImage: "person.badge.key.fill")
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 36)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.roundedRectangle(radius: 16))
+        .controlSize(.large)
+        .disabled(isSubmitting)
+        .accessibilityIdentifier("authentication-passkey")
+    }
+
     private func submit() async {
         guard canSubmit else { return }
         focusedField = nil
@@ -151,6 +165,25 @@ struct AuthenticationView: View {
             try TokenStore().save(accessToken: session.accessToken, refreshToken: session.refreshToken)
             appModel.didAuthenticate()
         } catch { message = error.localizedDescription }
+    }
+
+    private func loginWithPasskey() async {
+        focusedField = nil
+        isSubmitting = true
+        message = nil
+        defer { isSubmitting = false }
+        do {
+            let client = APIClient()
+            let options = try await client.beginPasskeyLogin()
+            let credential = try await PasskeyAuthorizationService.shared.authenticate(options: options)
+            let session = try await client.finishPasskeyLogin(sessionID: options.sessionId, credential: credential)
+            try TokenStore().save(accessToken: session.accessToken, refreshToken: session.refreshToken)
+            appModel.didAuthenticate()
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            return
+        } catch {
+            message = error.localizedDescription
+        }
     }
 
     private func prepareAppleNonce() async {

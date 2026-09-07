@@ -87,6 +87,7 @@ type updateCredentialsInput struct {
 }
 
 func RegisterRoutes(api huma.API, service *Service, appleVerifier AppleVerifier, appleTokenClient AppleTokenClient) {
+	registerPasskeyRoutes(api, service)
 	huma.Register(api, huma.Operation{OperationID: "login", Method: http.MethodPost, Path: "/api/v1/auth/login", Summary: "登录", Tags: []string{"认证"}}, func(_ context.Context, input *credentialsInput) (*sessionOutput, error) {
 		session, err := service.Login(input.Body.Username, input.Body.Password, input.Body.DeviceLabel)
 		if err != nil {

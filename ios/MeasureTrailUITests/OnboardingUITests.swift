@@ -29,6 +29,7 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertFalse(app.buttons["忘记密码？"].exists)
         XCTAssertFalse(app.staticTexts["邮箱"].exists)
         XCTAssertTrue(app.buttons["authentication-submit"].isHittable)
+        XCTAssertTrue(app.buttons["authentication-passkey"].isHittable)
         XCTAssertFalse(app.buttons["authentication-submit"].isEnabled)
 
         let username = app.textFields["authentication-username"]

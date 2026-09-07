@@ -16,8 +16,8 @@ type Config struct {
 	App      App
 	Database Database
 	Auth     Auth
-	Mail     Mail
 	Apple    Apple
+	Passkey  Passkey
 }
 
 type App struct {
@@ -43,15 +43,6 @@ type Auth struct {
 	RefreshSecret       string
 }
 
-type Mail struct {
-	Mode     string
-	Host     string
-	Port     string
-	Username string
-	Password string
-	From     string
-}
-
 type Apple struct {
 	TeamID                  string
 	KeyID                   string
@@ -63,12 +54,28 @@ type Apple struct {
 	RevokeURL               string
 }
 
+type Passkey struct {
+	RPID                    string
+	RPName                  string
+	Origins                 []string
+	CredentialEncryptionKey string
+	IOSAppID                string
+}
+
 func Load() (Config, error) {
 	environment := value("MEASURETRAIL_ENV", "development")
 	publicBaseURL := value("MEASURETRAIL_PUBLIC_BASE_URL", "http://localhost:21000")
 	corsOrigins, err := parseCORSOrigins(value("MEASURETRAIL_CORS_ORIGINS", publicBaseURL), strings.EqualFold(environment, "production"))
 	if err != nil {
 		return Config{}, err
+	}
+	publicURL, err := url.Parse(publicBaseURL)
+	if err != nil || publicURL.Hostname() == "" {
+		return Config{}, fmt.Errorf("MEASURETRAIL_PUBLIC_BASE_URL 必须是有效基础地址")
+	}
+	passkeyOrigins, err := parseCORSOrigins(value("MEASURETRAIL_PASSKEY_ORIGINS", publicBaseURL), strings.EqualFold(environment, "production"))
+	if err != nil {
+		return Config{}, fmt.Errorf("Passkey Origin 配置无效: %w", err)
 	}
 	config := Config{
 		App: App{
@@ -89,14 +96,6 @@ func Load() (Config, error) {
 			AccessSecret:    strings.TrimSpace(os.Getenv("MEASURETRAIL_JWT_ACCESS_SECRET")),
 			RefreshSecret:   strings.TrimSpace(os.Getenv("MEASURETRAIL_JWT_REFRESH_SECRET")),
 		},
-		Mail: Mail{
-			Mode:     value("MEASURETRAIL_MAIL_MODE", "log"),
-			Host:     strings.TrimSpace(os.Getenv("MEASURETRAIL_SMTP_HOST")),
-			Port:     value("MEASURETRAIL_SMTP_PORT", "587"),
-			Username: strings.TrimSpace(os.Getenv("MEASURETRAIL_SMTP_USERNAME")),
-			Password: strings.TrimSpace(os.Getenv("MEASURETRAIL_SMTP_PASSWORD")),
-			From:     strings.TrimSpace(os.Getenv("MEASURETRAIL_SMTP_FROM")),
-		},
 		Apple: Apple{
 			TeamID:                  strings.TrimSpace(os.Getenv("MEASURETRAIL_APPLE_TEAM_ID")),
 			KeyID:                   strings.TrimSpace(os.Getenv("MEASURETRAIL_APPLE_KEY_ID")),
@@ -106,6 +105,13 @@ func Load() (Config, error) {
 			JWKSURL:                 value("MEASURETRAIL_APPLE_JWKS_URL", "https://appleid.apple.com/auth/keys"),
 			TokenURL:                value("MEASURETRAIL_APPLE_TOKEN_URL", "https://appleid.apple.com/auth/token"),
 			RevokeURL:               value("MEASURETRAIL_APPLE_REVOKE_URL", "https://appleid.apple.com/auth/revoke"),
+		},
+		Passkey: Passkey{
+			RPID:                    value("MEASURETRAIL_PASSKEY_RP_ID", publicURL.Hostname()),
+			RPName:                  value("MEASURETRAIL_PASSKEY_RP_NAME", "量迹"),
+			Origins:                 passkeyOrigins,
+			CredentialEncryptionKey: strings.TrimSpace(os.Getenv("MEASURETRAIL_PASSKEY_CREDENTIAL_ENCRYPTION_KEY")),
+			IOSAppID:                strings.TrimSpace(os.Getenv("MEASURETRAIL_IOS_APP_ID")),
 		},
 	}
 
@@ -128,6 +134,9 @@ func Load() (Config, error) {
 	if err := validateApple(config.Apple, strings.EqualFold(config.App.Environment, "production")); err != nil {
 		return Config{}, err
 	}
+	if err := validatePasskey(config.Passkey, strings.EqualFold(config.App.Environment, "production")); err != nil {
+		return Config{}, err
+	}
 	return config, nil
 }
 
@@ -138,6 +147,9 @@ func validateProduction(config Config) error {
 	}
 	if invalidProductionSecret(config.Auth.AccessSecret) || invalidProductionSecret(config.Auth.RefreshSecret) {
 		return fmt.Errorf("生产环境 JWT secret 必须是至少 32 个字符的非占位值")
+	}
+	if config.Passkey.CredentialEncryptionKey == "" || config.Passkey.IOSAppID == "" {
+		return fmt.Errorf("生产环境必须配置 MEASURETRAIL_PASSKEY_CREDENTIAL_ENCRYPTION_KEY 和 MEASURETRAIL_IOS_APP_ID")
 	}
 	return nil
 }
@@ -209,6 +221,39 @@ func decodeCredentialEncryptionKey(value string) ([]byte, error) {
 		return key, nil
 	}
 	return base64.StdEncoding.DecodeString(value)
+}
+
+func validatePasskey(passkey Passkey, requireHTTPS bool) error {
+	if strings.TrimSpace(passkey.RPID) == "" || strings.ContainsAny(passkey.RPID, ":/") {
+		return fmt.Errorf("MEASURETRAIL_PASSKEY_RP_ID 必须是没有协议和端口的域名")
+	}
+	if strings.TrimSpace(passkey.RPName) == "" {
+		return fmt.Errorf("MEASURETRAIL_PASSKEY_RP_NAME 不能为空")
+	}
+	if len(passkey.Origins) == 0 {
+		return fmt.Errorf("MEASURETRAIL_PASSKEY_ORIGINS 至少需要一个 origin")
+	}
+	if passkey.CredentialEncryptionKey != "" {
+		key, err := decodeCredentialEncryptionKey(passkey.CredentialEncryptionKey)
+		if err != nil || len(key) != 32 {
+			return fmt.Errorf("MEASURETRAIL_PASSKEY_CREDENTIAL_ENCRYPTION_KEY 必须是 32-byte base64")
+		}
+	}
+	if passkey.IOSAppID != "" {
+		parts := strings.SplitN(passkey.IOSAppID, ".", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+			return fmt.Errorf("MEASURETRAIL_IOS_APP_ID 必须使用 Apple Team ID.Bundle ID 格式")
+		}
+	}
+	if requireHTTPS {
+		for _, origin := range passkey.Origins {
+			parsed, err := url.Parse(origin)
+			if err != nil || parsed.Scheme != "https" {
+				return fmt.Errorf("生产环境 MEASURETRAIL_PASSKEY_ORIGINS 必须全部使用 HTTPS")
+			}
+		}
+	}
+	return nil
 }
 
 func validateApplePrivateKey(value string) error {

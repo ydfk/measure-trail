@@ -303,8 +303,9 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1.0;
-				MEASURETRAIL_API_BASE_URL = "https://measure-api.ydfk.site";
+				MEASURETRAIL_API_BASE_URL = "https://measure-trail.ydfk.site";
 				"MEASURETRAIL_API_BASE_URL[sdk=iphonesimulator*]" = "http://localhost:21000";
+				MEASURETRAIL_PASSKEY_RP_ID = "measure-trail.ydfk.site";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ydfk.MeasureTrail;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -332,7 +333,8 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1.0;
-				MEASURETRAIL_API_BASE_URL = "https://measure-api.ydfk.site";
+				MEASURETRAIL_API_BASE_URL = "https://measure-trail.ydfk.site";
+				MEASURETRAIL_PASSKEY_RP_ID = "measure-trail.ydfk.site";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ydfk.MeasureTrail;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

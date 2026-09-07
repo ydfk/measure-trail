@@ -22,7 +22,7 @@ final class AppConfigurationTests: XCTestCase {
     func testBuildEnvironmentSelectsServerWithoutUserDefaults() {
         XCTAssertEqual(AppConfiguration.resolveAPIBaseURL(environmentOverride: nil, bundledValue: "http://localhost:21000", isDevelopment: true)?.absoluteString, "http://localhost:21000")
         XCTAssertEqual(AppConfiguration.resolveAPIBaseURL(environmentOverride: "https://staging.example.com", bundledValue: "http://localhost:21000", isDevelopment: true)?.host, "staging.example.com")
-        XCTAssertEqual(AppConfiguration.resolveAPIBaseURL(environmentOverride: "https://unexpected.example.com", bundledValue: "https://measure-api.ydfk.site/", isDevelopment: false)?.absoluteString, "https://measure-api.ydfk.site")
+        XCTAssertEqual(AppConfiguration.resolveAPIBaseURL(environmentOverride: "https://unexpected.example.com", bundledValue: "https://measure-trail.ydfk.site/", isDevelopment: false)?.absoluteString, "https://measure-trail.ydfk.site")
     }
 
     func testReleaseRejectsMissingAndInsecureServer() {
@@ -38,6 +38,7 @@ final class AppConfigurationTests: XCTestCase {
 
     func testBundleContainsServerAndLaunchScreen() {
         XCTAssertNotNil(AppConfiguration.apiBaseURL)
+        XCTAssertEqual(AppConfiguration.passkeyRelyingPartyID, "measure-trail.ydfk.site")
         XCTAssertNotNil(Bundle.main.object(forInfoDictionaryKey: "UILaunchScreen"))
     }
 }

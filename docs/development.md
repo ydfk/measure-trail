@@ -18,18 +18,18 @@
 
 - `slimtrack.db` 是用户提供的旧数据，仅用于后续迁移验证；它及其 WAL/SHM 文件不得移动、修改或提交。
 - `.env`、本机工具配置、SQLite 运行数据、备份和日志均受 `.gitignore` 保护；提交前仍须检查暂存内容。
-- `.env.example` 只表达配置名称与安全边界，禁止填写真实密钥、Apple 私钥或个人健康数据。
+- `.env.example` 只提供本地开发的最小配置，禁止填写真实密钥、Apple 私钥或个人健康数据；完整生产配置由生成脚本创建。
 
 ## 本地 API
 
-- 从 `.env.example` 复制 `.env` 后，保持 `MEASURETRAIL_ENV=development`，并替换两个 JWT secret 占位值。
+- 从 `.env.example` 复制 `.env` 后，保持 `MEASURETRAIL_ENV=development`，并替换两个 JWT secret 占位值。其余本地端口、数据库、默认账号、CORS 和 Web 目录均使用代码或 Compose 默认值，无需重复写入。
 - 可在 `backend/` 中加载 `.env` 后运行 `go run ./cmd`，也可在仓库根目录运行 `docker compose up --build api`；Compose 会读取 `.env` 中的运行环境，不会将开发配置强制覆盖为生产配置。
 - 本地 HTTP origin 仅在开发环境允许；生产环境仍要求公网地址和所有 CORS origin 使用 HTTPS。
 - 服务首次运行确保默认账号存在。默认值为 `admin` / `111111`，可由 `MEASURETRAIL_DEFAULT_USERNAME` 和 `MEASURETRAIL_DEFAULT_PASSWORD` 在首次创建前覆盖。后续启动不覆盖数据库中已修改的凭证。
 
 ## iOS 服务环境
 
-- 默认地址配置在 `ios/MeasureTrail.xcodeproj/project.pbxproj` 的 MeasureTrail target Build Settings：Debug 的 `MEASURETRAIL_API_BASE_URL` 为正式 HTTPS 地址，并通过 `[sdk=iphonesimulator*]` 条件改为 `http://localhost:21000`；Release 固定为 `https://measure-api.ydfk.site`。
+- 默认地址配置在 `ios/MeasureTrail.xcodeproj/project.pbxproj` 的 MeasureTrail target Build Settings：Debug 的 `MEASURETRAIL_API_BASE_URL` 为正式 HTTPS 地址，并通过 `[sdk=iphonesimulator*]` 条件改为 `http://localhost:21000`；Release 固定为 `https://measure-trail.ydfk.site`。
 - `ios/Configuration/Info.plist` 将该构建参数写入 `MeasureTrailAPIBaseURL`，`ios/MeasureTrail/App/AppConfiguration.swift` 负责读取和安全校验。Debug 也支持同名 Scheme 环境变量，Release 忽略运行时环境覆盖。
 - 临时测试环境可在构建命令末尾传入 `MEASURETRAIL_API_BASE_URL=https://测试服务域名`。若需要长期增加 Staging，应在 Xcode 中新增 Staging Build Configuration，并为同名参数配置对应 HTTPS 地址。
 - 仅 Debug 允许 localhost、回环或 `.local` 地址的 HTTP；真机连接本地开发机时通过 Scheme 设置开发机的 `.local` 地址，首次连接需允许本地网络。Release 必须使用 HTTPS。旧版 UserDefaults 手填地址不再参与选择。
@@ -39,11 +39,12 @@
 
 - 本地 Go 默认从 `../web/dist` 提供静态文件，可通过 `MEASURETRAIL_WEB_ROOT` 覆盖；目录或 `index.html` 不存在时只提供 API。
 - 未来 Vue/React 工程必须由 `build` 脚本输出到 `web/dist`。未知前端路由回退到 `index.html`，`/api/*` 和 `/openapi.json` 不参与 SPA 回退。
+- 服务端默认从公网地址推导 Passkey RP ID 和允许 origin，并使用“量迹”作为显示名称；只有多 origin 或特殊域名部署才需要 `MEASURETRAIL_PASSKEY_RP_ID`、`MEASURETRAIL_PASSKEY_RP_NAME`、`MEASURETRAIL_PASSKEY_ORIGINS` 覆盖值。生产环境仍必须提供 `MEASURETRAIL_PASSKEY_CREDENTIAL_ENCRYPTION_KEY` 和 `MEASURETRAIL_IOS_APP_ID`。iOS 工程的 `MEASURETRAIL_PASSKEY_RP_ID` 必须与服务端一致；本机 HTTP API 可以开发普通接口，但 Apple 平台 Passkey 的完整验证需要已部署的 HTTPS 关联域名。
 - Docker 可以在构建阶段使用 Node，但运行镜像只包含 Go 二进制和 `dist` 静态文件，不运行独立 Web 服务器。
 
 ## Docker 生产示例
 
-- 运行 `MEASURETRAIL_PUBLIC_BASE_URL=https://你的域名 ./scripts/generate-production-env.sh` 生成权限为 `600` 的 `.env.production`。脚本会生成随机默认密码和两条 JWT secret，且拒绝覆盖已有文件。
+- 运行 `MEASURETRAIL_IOS_APP_ID=你的TeamID.com.ydfk.MeasureTrail ./scripts/generate-production-env.sh` 生成权限为 `600` 的最小 `.env.production`。脚本会生成随机默认密码、两条 JWT secret 和 Passkey 凭据加密密钥，且拒绝覆盖已有文件。
 - 运行 `docker compose -f docker-compose.production.example.yml up -d` 使用 Docker Hub 镜像启动单实例服务。可通过 shell 变量 `MEASURETRAIL_IMAGE=用户名/measure-trail:版本` 覆盖镜像。
 - `.env.production` 包含实际凭证并受 Git 忽略；不要复制回 `.env.example` 或提交到仓库。
 

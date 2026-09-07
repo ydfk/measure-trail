@@ -19,15 +19,17 @@ RUN apk add --no-cache build-base git
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ .
-RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/measuretrail-api ./cmd
+RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/measuretrail-api ./cmd \
+    && CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/measuretrail-legacy-import ./cmd/legacy-import
 
 FROM alpine:3.23
 
-RUN apk add --no-cache ca-certificates sqlite tzdata && addgroup -S measuretrail && adduser -S measuretrail -G measuretrail
+RUN apk add --no-cache ca-certificates sqlite su-exec tzdata && addgroup -S measuretrail && adduser -S measuretrail -G measuretrail
 WORKDIR /app
 COPY --from=api-builder /out/measuretrail-api ./measuretrail-api
+COPY --from=api-builder /out/measuretrail-legacy-import ./measuretrail-legacy-import
 COPY --from=web-builder /src/web/dist ./web
-COPY backend/scripts/backup-sqlite.sh backend/scripts/restore-sqlite.sh /app/scripts/
+COPY backend/scripts/backup-sqlite.sh backend/scripts/restore-sqlite.sh backend/scripts/run-legacy-import.sh /app/scripts/
 RUN chmod 0755 /app/scripts/*.sh && mkdir -p /app/backups /app/data /app/log && chown -R measuretrail:measuretrail /app
 USER measuretrail
 EXPOSE 21000

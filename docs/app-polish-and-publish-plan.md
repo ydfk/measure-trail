@@ -24,7 +24,7 @@
 - 历史筛选、搜索、空结果和删除映射正确。
 - 用户可在“我的”修改用户名或密码，当前密码必填，两次新密码必须一致；成功后返回登录页。
 - 生产示例不包含真实 secret，生成脚本默认拒绝覆盖并创建权限为 `600` 的环境文件。
-- Debug 模拟器默认 `http://localhost:21000`，Debug 真机和 Release 默认 `https://measure-api.ydfk.site`；构建覆盖方式有文档说明。
+- Debug 模拟器默认 `http://localhost:21000`，Debug 真机和 Release 默认 `https://measure-trail.ydfk.site`；构建覆盖方式有文档说明。
 - `v1.2.3` 或预发布版本标签可生成 Docker Hub semver 标签；稳定版额外生成 `latest`。
 
 ## 验证结果（2026-09-07）

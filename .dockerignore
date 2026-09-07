@@ -11,6 +11,10 @@ backend/log
 backend/tmp
 backend/bin
 backend/coverage.out
+import
+*.db
+*.db-shm
+*.db-wal
 web/node_modules
 web/dist
 *.sqlite

@@ -59,8 +59,20 @@ func New(config config.Config, db *gorm.DB, authService *auth.Service, appleVeri
 		auth.RegisterRoutes(api, authService, appleVerifier, auth.NewAppleTokenClient(config.Apple))
 		tracking.RegisterRoutes(api, tracking.NewService(db), authService)
 	}
+	registerAppleAppSiteAssociation(app, config.Passkey.IOSAppID)
 	registerWebRoutes(app, config.App.WebRoot)
 	return app
+}
+
+func registerAppleAppSiteAssociation(app *fiber.App, iosAppID string) {
+	iosAppID = strings.TrimSpace(iosAppID)
+	if iosAppID == "" {
+		return
+	}
+	app.Get("/.well-known/apple-app-site-association", func(ctx fiber.Ctx) error {
+		ctx.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+		return ctx.JSON(fiber.Map{"webcredentials": fiber.Map{"apps": []string{iosAppID}}})
+	})
 }
 
 func registerWebRoutes(app *fiber.App, webRoot string) {

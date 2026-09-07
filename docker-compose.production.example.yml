@@ -24,6 +24,20 @@ services:
       retries: 3
       start_period: 5s
 
+  legacy-import:
+    profiles: ["tools"]
+    image: ${MEASURETRAIL_IMAGE:-ydfk/measure-trail:latest}
+    env_file:
+      - ${MEASURETRAIL_ENV_FILE:-.env.production}
+    environment:
+      MEASURETRAIL_SQLITE_PATH: /app/data/measuretrail.sqlite
+      MEASURETRAIL_SQLITE_BUSY_TIMEOUT_MS: "5000"
+    user: "0:0"
+    entrypoint: ["/app/scripts/run-legacy-import.sh"]
+    volumes:
+      - measuretrail-data:/app/data
+      - ${MEASURETRAIL_LEGACY_IMPORT_DIR:-./import}:/import:ro
+
 volumes:
   measuretrail-data:
   measuretrail-log:

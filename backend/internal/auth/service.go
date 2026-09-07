@@ -27,7 +27,17 @@ type Service struct {
 	db                  *gorm.DB
 	tokens              *tokenManager
 	appleCredentials    *appleCredentialStore
+	passkeys            *passkeyService
 	now                 func() time.Time
+}
+
+func (service *Service) ConfigurePasskeys(settings config.Passkey) error {
+	passkeys, err := newPasskeyService(service.db, service, settings)
+	if err != nil {
+		return err
+	}
+	service.passkeys = passkeys
+	return nil
 }
 
 func (service *Service) ConfigureAppleCredentials(encodedKey string) error {

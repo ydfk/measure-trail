@@ -36,7 +36,9 @@ Phase 2 至 Phase 4 的服务基础设施、认证、资料、记录、增量同
 
 ### 认证与账号
 
-认证端点以 [`../backend/openapi/openapi-3.0.json`](../backend/openapi/openapi-3.0.json) 为跨端稳定快照：包括用户名密码登录、会话刷新与撤销、Sign in with Apple 一次性 nonce、已有身份登录与绑定、登录凭证修改，以及账号删除。
+认证端点以 [`../backend/openapi/openapi-3.0.json`](../backend/openapi/openapi-3.0.json) 为跨端稳定快照：包括用户名密码登录、Passkey 注册/登录/维护、会话刷新与撤销、Sign in with Apple 一次性 nonce、已有身份登录与绑定、登录凭证修改，以及账号删除。
+
+Passkey 使用可发现凭据。客户端从 `/api/v1/auth/passkey/login/options` 取得挑战，完成平台认证后向 `/api/v1/auth/passkey/login/verify` 提交标准 WebAuthn assertion，服务返回与密码登录相同的 access/refresh token。注册和维护位于 `/api/v1/account/passkeys` 下并要求 Bearer token；同一账号可以保存多个 Passkey。
 
 Apple 登录由服务端校验 Apple 签名、发行方、受众、过期时间和一次性 nonce。生产部署必须配置 `MEASURETRAIL_APPLE_CLIENT_ID`；未配置时端点以 `503` 明确拒绝，不会降级为不验证的客户端登录。
 

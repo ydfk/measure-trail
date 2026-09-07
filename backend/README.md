@@ -1,6 +1,6 @@
 # MeasureTrail Backend
 
-Go Fiber API with SQLite migrations, password and Apple authentication, profiles, versioned measurements, incremental sync, export, and the legacy SQLite inspection/import tool.
+Go Fiber API with SQLite migrations, password, Passkey and Apple authentication, profiles, versioned measurements, incremental sync, export, and the legacy SQLite inspection/import tool.
 
 ## Local development
 
@@ -13,8 +13,8 @@ Run `go test ./...`, `go vet ./...`, and `./scripts/update-openapi.sh` before ch
 
 ## Deployment
 
-Production uses the root `docker-compose.yml` with one Go instance and named volumes for SQLite, logs, and backups. The image may build a Vue/React application from `web/`, then copies only its `dist/` output into the runtime image; Go serves those files with SPA fallback. No frontend web server runs in the container. `MEASURETRAIL_ENV=production` requires an HTTPS public base URL, non-placeholder JWT secrets, and complete Apple configuration whenever Apple login is enabled. See [`../docs/deployment.md`](../docs/deployment.md) for deployment, backup, restore, and upgrade steps.
+Production uses one Go API instance and named volumes for SQLite, logs, and backups. The image may build a Vue/React application from `web/`, then copies only its `dist/` output into the runtime image; Go serves those files with SPA fallback. The same image also contains the one-off `measuretrail-legacy-import` CLI, but no frontend web server. `MEASURETRAIL_ENV=production` requires an HTTPS public base URL, non-placeholder JWT secrets, and complete Apple configuration whenever Apple login is enabled. See [`../docs/deployment.md`](../docs/deployment.md) for deployment, first-run legacy import, backup, restore, and upgrade steps.
 
 ## Legacy data
 
-The user-provided `../slimtrack.db` is read-only input and is ignored by Git. Run `go run ./cmd/legacy-import --source ../slimtrack.db --dry-run` first. After confirmation, a real import targets the bootstrapped default account unless `--owner-username` selects another existing account; see [`../docs/development.md`](../docs/development.md).
+The user-provided `../slimtrack.db` is read-only input and is ignored by Git. Run `go run ./cmd/legacy-import --source ../slimtrack.db --dry-run` first. In production, put it at `import/slimtrack.db` on the host and use the Compose `legacy-import` tool service, which mounts that directory read-only. Never replace `/app/data/measuretrail.sqlite` with the old file. After confirmation, a real import targets the bootstrapped default account unless `--owner-username` selects another existing account; see [`../docs/deployment.md`](../docs/deployment.md).

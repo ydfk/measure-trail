@@ -20,7 +20,7 @@ struct APIClient: Sendable {
         }
     }
 
-    private let baseURL: URL?
+    let baseURL: URL?
 
     init(baseURL: URL? = AppConfiguration.apiBaseURL) {
         self.baseURL = baseURL
@@ -302,7 +302,7 @@ struct APIClient: Sendable {
         return try JSONDecoder().decode(Response.self, from: data)
     }
 
-    private func authorizedData(for request: URLRequest, accessToken: String) async throws -> (Data, HTTPURLResponse) {
+    func authorizedData(for request: URLRequest, accessToken: String) async throws -> (Data, HTTPURLResponse) {
         let first = try await execute(request)
         guard first.1.statusCode == 401 else { return first }
         var retry = request
@@ -310,7 +310,7 @@ struct APIClient: Sendable {
         return try await execute(retry)
     }
 
-    private func execute(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    func execute(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else { throw APIError.rejected("服务响应无效。") }
         return (data, httpResponse)

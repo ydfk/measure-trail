@@ -37,7 +37,7 @@ measure-trail/
 ├── ios/           # Native SwiftUI application for iOS 26
 ├── web/           # Future web client placeholder
 ├── docs/          # Product plan and development conventions
-├── .env.example   # Configuration boundary only; contains no usable secrets
+├── .env.example   # Minimal local-development configuration; contains no usable secrets
 ├── README.md
 └── README_zh.md
 ```
@@ -56,4 +56,4 @@ The supplied `slimtrack.db` stays in the repository root only as local migration
 
 ## Development
 
-The iOS app selects its server automatically: Debug simulators use `http://localhost:21000`, while devices and Release builds use `https://measure-api.ydfk.site`; `MEASURETRAIL_API_BASE_URL` lives in the Xcode target Build Settings. The backend bootstraps `admin` / `111111` unless first-run credentials are supplied through environment variables, and users can change them from account settings. A single Go process serves both `/api` and the future Vue/React static build copied into the Docker image. A production Compose example and secure environment generator are included. Final HTTPS deployment, HealthKit read/write, Sign in with Apple on device, cross-device conflict, and App Store release gates remain open.
+The iOS app selects its server automatically: Debug simulators use `http://localhost:21000`, while devices and Release builds use `https://measure-trail.ydfk.site`; `MEASURETRAIL_API_BASE_URL` lives in the Xcode target Build Settings. The backend bootstraps `admin` / `111111` unless first-run credentials are supplied through environment variables, and users can change them from account settings. A single Go process serves both `/api` and the future Vue/React static build copied into the Docker image. A production Compose example and secure environment generator are included. Final HTTPS deployment, HealthKit read/write, Sign in with Apple on device, cross-device conflict, and App Store release gates remain open.

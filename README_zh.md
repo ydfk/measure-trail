@@ -37,7 +37,7 @@ measure-trail/
 ├── ios/           # iOS 26 原生 SwiftUI 应用
 ├── web/           # Future web client placeholder
 ├── docs/          # Product plan and development conventions
-├── .env.example   # Configuration boundary only; contains no usable secrets
+├── .env.example   # 最小本地开发配置，不包含可用密钥
 ├── README.md
 └── README_zh.md
 ```
@@ -56,4 +56,4 @@ measure-trail/
 
 ## Development
 
-iOS 应用自动选择服务器：Debug 模拟器连接 `http://localhost:21000`，真机及 Release 连接 `https://measure-api.ydfk.site`，地址配置在 Xcode target Build Settings 的 `MEASURETRAIL_API_BASE_URL`。后端首次启动默认创建 `admin` / `111111`，也可由环境变量注入；用户可在“我的”修改用户名和密码。Docker 镜像由 Go 单进程同时提供 `/api` 与未来 Vue/React 的静态构建产物，并提供生产 Compose 示例与安全环境生成脚本。最终 HTTPS 部署、HealthKit 读写、真机通过 Apple 登录、跨设备冲突和 App Store 发布门禁仍未完成。
+iOS 应用自动选择服务器：Debug 模拟器连接 `http://localhost:21000`，真机及 Release 连接 `https://measure-trail.ydfk.site`，地址配置在 Xcode target Build Settings 的 `MEASURETRAIL_API_BASE_URL`。后端首次启动默认创建 `admin` / `111111`，也可由环境变量注入；用户可在“我的”修改用户名和密码。Docker 镜像由 Go 单进程同时提供 `/api` 与未来 Vue/React 的静态构建产物，并提供生产 Compose 示例与安全环境生成脚本。最终 HTTPS 部署、HealthKit 读写、真机通过 Apple 登录、跨设备冲突和 App Store 发布门禁仍未完成。
