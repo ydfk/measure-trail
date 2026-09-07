@@ -128,6 +128,18 @@ func TestPasskeyRoutesCreateRegistrationChallenge(t *testing.T) {
 		t.Fatalf("Passkey 注册选项 status=%d body=%s", response.StatusCode, body)
 	}
 	listRequest := httptest.NewRequest(http.MethodGet, "/api/v1/account/passkeys", nil)
+	// iOS 注册请求不携带登录会话的设备名称，也应进入 WebAuthn 校验。
+	verify := httptest.NewRequest(http.MethodPost, "/api/v1/account/passkeys/registration/verify", strings.NewReader(`{"sessionId":"missing-session","credential":{}}`))
+	verify.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	verify.Header.Set("Content-Type", "application/json")
+	verifyResponse, err := app.Test(verify)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer verifyResponse.Body.Close()
+	if body := readBody(t, verifyResponse); verifyResponse.StatusCode != http.StatusBadRequest || !strings.Contains(body, "Passkey 会话不存在或已过期") {
+		t.Fatalf("注册请求应进入会话校验，status=%d body=%s", verifyResponse.StatusCode, body)
+	}
 	listRequest.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	listResponse, err := app.Test(listRequest)
 	if err != nil {
@@ -136,6 +148,64 @@ func TestPasskeyRoutesCreateRegistrationChallenge(t *testing.T) {
 	defer listResponse.Body.Close()
 	if body := readBody(t, listResponse); listResponse.StatusCode != http.StatusOK || !strings.Contains(body, `"passkeys":[]`) {
 		t.Fatalf("Passkey 列表 status=%d body=%s", listResponse.StatusCode, body)
+	}
+	var options struct {
+		SessionID string `json:"sessionId"`
+		Options   struct {
+			PublicKey struct {
+				Challenge string `json:"challenge"`
+			} `json:"publicKey"`
+		} `json:"options"`
+	}
+	for _, includeDeviceLabel := range []bool{false, true} {
+		// 每次注册都重新获取挑战，分别覆盖旧、新客户端请求格式。
+		challengeRequest := httptest.NewRequest(http.MethodPost, "/api/v1/account/passkeys/registration/options", strings.NewReader(`{"name":"测试凭据"}`))
+		challengeRequest.Header.Set("Authorization", "Bearer "+session.AccessToken)
+		challengeRequest.Header.Set("Content-Type", "application/json")
+		challengeResponse, err := app.Test(challengeRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if challengeResponse.StatusCode != http.StatusOK {
+			t.Fatalf("创建注册挑战失败: %d", challengeResponse.StatusCode)
+		}
+		if err := json.NewDecoder(challengeResponse.Body).Decode(&options); err != nil {
+			t.Fatal(err)
+		}
+		challengeResponse.Body.Close()
+		payload := map[string]any{"sessionId": options.SessionID, "credential": registrationCredential(t, options.Options.PublicKey.Challenge)}
+		if includeDeviceLabel {
+			payload["deviceLabel"] = "iPhone"
+		}
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verified := httptest.NewRequest(http.MethodPost, "/api/v1/account/passkeys/registration/verify", strings.NewReader(string(encoded)))
+		verified.Header.Set("Authorization", "Bearer "+session.AccessToken)
+		verified.Header.Set("Content-Type", "application/json")
+		verifiedResponse, err := app.Test(verified)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := readBody(t, verifiedResponse)
+		verifiedResponse.Body.Close()
+		if verifiedResponse.StatusCode != http.StatusOK {
+			t.Fatalf("注册失败 deviceLabel=%v status=%d body=%s", includeDeviceLabel, verifiedResponse.StatusCode, result)
+		}
+		var saved struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(result), &saved); err != nil || saved.ID == "" {
+			t.Fatalf("凭据未保存: %s", result)
+		}
+		var count int64
+		if err := db.Raw("SELECT COUNT(*) FROM passkey_credentials WHERE id = ?", saved.ID).Scan(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("凭据未写入数据库: %s", saved.ID)
+		}
 	}
 }
 

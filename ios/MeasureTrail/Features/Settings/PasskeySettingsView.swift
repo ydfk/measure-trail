@@ -102,7 +102,7 @@ struct PasskeySettingsView: View {
             passkeys.append(passkey)
         } catch let error as ASAuthorizationError where error.code == .canceled {
             return
-        } catch { message = error.localizedDescription }
+        } catch { message = PasskeyErrorMessage.make(from: error) }
     }
 
     private func rename(_ passkey: APIClient.PasskeyItem, name: String) async {

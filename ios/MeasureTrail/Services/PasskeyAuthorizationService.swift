@@ -114,3 +114,13 @@ enum PasskeyAuthorizationError: LocalizedError {
         }
     }
 }
+
+enum PasskeyErrorMessage {
+    static func make(from error: Error) -> String {
+        let nsError = error as NSError
+        guard nsError.domain == ASAuthorizationError.errorDomain else {
+            return error.localizedDescription
+        }
+        return "\(error.localizedDescription)（AuthenticationServices \(nsError.code)）"
+    }
+}

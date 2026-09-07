@@ -149,7 +149,7 @@ struct AuthenticationView: View {
         } catch let error as ASAuthorizationError where error.code == .canceled {
             return
         } catch {
-            message = error.localizedDescription
+            message = PasskeyErrorMessage.make(from: error)
         }
     }
 

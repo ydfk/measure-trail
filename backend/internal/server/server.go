@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
+	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/ydfk/measure-trail/backend/internal/api/health"
 	"github.com/ydfk/measure-trail/backend/internal/auth"
@@ -26,6 +27,11 @@ func New(config config.Config, db *gorm.DB, authService *auth.Service, appleVeri
 		corsOrigins = []string{config.App.PublicBaseURL}
 	}
 	app := fiber.New(fiber.Config{ErrorHandler: problemHandler})
+	app.Use(logger.New(logger.Config{
+		Format:        "${time} ${status} ${latency} ${method} ${path}\n",
+		TimeFormat:    time.RFC3339,
+		DisableColors: true,
+	}))
 	app.Use(recover.New())
 	app.Use(limiter.New(limiter.Config{
 		Max:        10,

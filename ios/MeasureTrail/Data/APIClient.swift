@@ -295,7 +295,15 @@ struct APIClient: Sendable {
     }
 
     func responseError(_ data: Data, statusCode: Int, fallback: String) -> APIError {
-        let message = (try? JSONDecoder().decode(Problem.self, from: data))?.detail ?? fallback
+        let problem = try? JSONDecoder().decode(Problem.self, from: data)
+        let message: String
+        if statusCode == 422 {
+            let fields = problem?.errors?.compactMap(\.location).filter { !$0.isEmpty }.joined(separator: "、") ?? ""
+            message = "请求字段校验失败（HTTP 422）" + (fields.isEmpty ? "。" : "：\(fields)。")
+                + (problem?.errors?.compactMap(\.message).joined(separator: "；") ?? "")
+        } else {
+            message = problem?.detail ?? fallback
+        }
         return statusCode == 409 ? .conflict(message) : .rejected(message)
     }
 }
@@ -303,4 +311,12 @@ struct APIClient: Sendable {
 private struct Credentials: Encodable { let username: String; let password: String; let deviceLabel: String }
 private struct EmptyResponse: Decodable {}
 private struct HealthResponse: Decodable { let status: String }
-private struct Problem: Decodable { let detail: String? }
+private struct Problem: Decodable {
+    let detail: String?
+    let errors: [FieldError]?
+
+    struct FieldError: Decodable {
+        let message: String?
+        let location: String?
+    }
+}

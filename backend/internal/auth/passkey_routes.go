@@ -24,7 +24,7 @@ type passkeyVerifyInput struct {
 	Body          struct {
 		SessionID   string          `json:"sessionId" minLength:"1" maxLength:"128" required:"true"`
 		Credential  json.RawMessage `json:"credential" required:"true"`
-		DeviceLabel string          `json:"deviceLabel" maxLength:"128"`
+		DeviceLabel string          `json:"deviceLabel,omitempty" maxLength:"128"`
 	}
 }
 

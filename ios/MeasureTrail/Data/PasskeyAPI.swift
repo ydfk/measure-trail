@@ -95,8 +95,14 @@ extension APIClient {
     }
 
     func finishPasskeyRegistration(sessionID: String, credential: RegistrationCredential, accessToken: String) async throws -> PasskeyItem {
-        struct Payload: Encodable { let sessionId: String; let credential: RegistrationCredential }
-        return try await authorizedPasskeyRequest(path: "/api/v1/account/passkeys/registration/verify", method: "POST", body: Payload(sessionId: sessionID, credential: credential), accessToken: accessToken)
+        try await authorizedPasskeyRequest(path: "/api/v1/account/passkeys/registration/verify", method: "POST", body: PasskeyRegistrationVerification(sessionId: sessionID, credential: credential), accessToken: accessToken)
+    }
+
+    struct PasskeyRegistrationVerification: Encodable {
+        let sessionId: String
+        let credential: RegistrationCredential
+        // 兼容仍要求此字段的已部署服务端。
+        let deviceLabel = "iPhone"
     }
 
     func renamePasskey(id: String, name: String, accessToken: String) async throws -> PasskeyItem {

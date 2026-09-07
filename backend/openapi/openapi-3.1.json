@@ -551,8 +551,7 @@
         },
         "required": [
           "sessionId",
-          "credential",
-          "deviceLabel"
+          "credential"
         ],
         "type": "object"
       },
