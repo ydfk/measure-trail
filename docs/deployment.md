@@ -26,6 +26,20 @@ docker compose -f docker-compose.production.example.yml up -d
 
 生成脚本创建部署目录下的 `.env.production`，并设置权限为 `600`。目标文件已存在时脚本会终止，避免覆盖正在使用的凭证。除 Apple Team ID 外，首次部署无需手工生成或复制任何密钥。
 
+### 宿主机目录挂载
+
+官方生产示例使用 Docker named volume，不需要手工处理权限。如果自行改为 `./data:/app/data`、`./log:/app/log` 和 `./backups:/app/backups`，镜像入口会先将这三个目录交给容器内的 `measuretrail` 用户，再降权启动 Go。业务进程不会以 root 运行。
+
+旧版镜像尚未包含该入口时，SQLite 可能因为无法在 `./data` 中创建文件而报告 `unable to open database file: no such file or directory`。可先在服务器执行以下命令修复现有目录，再重新创建服务：
+
+```sh
+measuretrail_user=$(docker run --rm --entrypoint sh ydfk/measure-trail:latest \
+  -c 'printf "%s:%s" "$(id -u measuretrail)" "$(id -g measuretrail)"')
+chown -R "$measuretrail_user" data log backups
+chmod -R u+rwX,go-rwx data log backups
+docker compose up -d --force-recreate measure-trail
+```
+
 ### `.env.production` 必需项
 
 | 配置项 | 生产值 | 来源或生成方式 |
@@ -70,6 +84,8 @@ docker compose -f docker-compose.production.example.yml run --rm --no-deps \
 ```
 
 工具入口先以 root 读取权限为 `600` 的只读挂载文件，将副本放进临时容器，再降权为 `measuretrail` 执行迁移器；目标数据库仍由非 root 用户写入。dry-run 只校验源数据，不连接或验证目标账号，也不输出备注正文。核对源 SHA-256、记录数、日期范围、腰围数和备注数后，先在正式环境成功登录目标账号，确认它是本次导入的归属账号。只有目标账号和 dry-run 报告都确认后，才能执行正式导入；省略 `--owner-username` 时会使用数据库记住的默认账号。正式导入会写入同一个 `measuretrail-data` 卷；相同源文件重复导入、目标日期冲突或账号不存在都会使整批导入失败并回滚。上线后应按“在线备份”步骤立即生成首份备份，再将旧库保留在部署目录之外的加密位置。
+
+历史导入会同时登记增量同步变更。若使用过未包含该修复的旧镜像导入，测量记录虽然已在数据库中，但已经登录的 iOS 客户端可能无法通过游标发现它们。此时停止 API，并为尚未登记的 `source = 'legacy'` 记录补写 `measurement_changes`；补写使用 `NOT EXISTS`，重复执行不会产生重复变更。
 
 ## Docker Hub 发布
 

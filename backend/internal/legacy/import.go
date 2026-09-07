@@ -63,7 +63,11 @@ func Import(target *gorm.DB, options ImportOptions) (Report, error) {
 			}
 		}
 		for _, record := range records {
-			if err := tx.Exec("INSERT INTO measurements(id, user_id, recorded_on, weight_g, waist_mm, note, source, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'legacy', 1, ?, ?)", uuid.NewString(), userID, record.RecordedOn, record.WeightG, record.WaistMM, record.Note, record.CreatedAt, record.UpdatedAt).Error; err != nil {
+			measurementID := uuid.NewString()
+			if err := tx.Exec("INSERT INTO measurements(id, user_id, recorded_on, weight_g, waist_mm, note, source, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'legacy', 1, ?, ?)", measurementID, userID, record.RecordedOn, record.WeightG, record.WaistMM, record.Note, record.CreatedAt, record.UpdatedAt).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("INSERT INTO measurement_changes(user_id, measurement_id, changed_at) VALUES (?, ?, ?)", userID, measurementID, now).Error; err != nil {
 				return err
 			}
 		}

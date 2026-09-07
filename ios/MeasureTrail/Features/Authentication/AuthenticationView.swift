@@ -3,14 +3,11 @@ import SwiftUI
 
 struct AuthenticationView: View {
     @Environment(AppModel.self) private var appModel
-    @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focusedField: Field?
-    @State private var username = "admin"
+    @State private var username = ""
     @State private var password = ""
     @State private var message: String?
-    @State private var appleMessage: String?
     @State private var isSubmitting = false
-    @State private var appleNonce: String?
 
     private enum Field { case username, password }
     private var canSubmit: Bool {
@@ -47,7 +44,7 @@ struct AuthenticationView: View {
                         .disabled(!canSubmit)
                         .accessibilityIdentifier("authentication-submit")
                     }
-                    appleLogin
+                    passkeyLoginButton
                 }
                 .frame(maxWidth: 440)
                 .frame(maxWidth: .infinity)
@@ -58,8 +55,7 @@ struct AuthenticationView: View {
             .scrollDismissesKeyboard(.interactively)
             .background(Color(uiColor: .systemBackground).ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
-            .tint(colorScheme == .dark ? MeasureTrailStyle.blue : MeasureTrailStyle.ink)
-            .task { await prepareAppleNonce() }
+            .tint(MeasureTrailStyle.accent)
         }
     }
 
@@ -112,35 +108,6 @@ struct AuthenticationView: View {
         .disabled(isSubmitting)
     }
 
-    private var appleLogin: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 16) {
-                Rectangle().fill(Color(uiColor: .separator)).frame(height: 0.5)
-                Text("或").font(.footnote).foregroundStyle(.secondary)
-                Rectangle().fill(Color(uiColor: .separator)).frame(height: 0.5)
-            }
-            passkeyLoginButton
-            SignInWithAppleButton(.signIn) { request in
-                request.nonce = appleNonce
-            } onCompletion: { result in
-                Task { await completeAppleLogin(result) }
-            }
-            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-            .id(colorScheme)
-            .frame(height: 52)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .accessibilityLabel("使用 Apple 登录")
-            .disabled(appleNonce == nil || isSubmitting)
-            if let appleMessage {
-                Text(appleMessage).font(.footnote).foregroundStyle(.secondary)
-                Button("重试 Apple 登录") { Task { await prepareAppleNonce() } }
-                    .font(.footnote)
-                    .frame(minHeight: 44)
-                    .disabled(isSubmitting)
-            }
-        }
-    }
-
     private var passkeyLoginButton: some View {
         Button { Task { await loginWithPasskey() } } label: {
             Label("使用 Passkey 登录", systemImage: "person.badge.key.fill")
@@ -186,37 +153,6 @@ struct AuthenticationView: View {
         }
     }
 
-    private func prepareAppleNonce() async {
-        guard appleNonce == nil else { return }
-        appleMessage = nil
-        do { appleNonce = try await APIClient().newAppleNonce() }
-        catch { appleMessage = "Apple 登录暂不可用，可使用用户名登录。" }
-    }
-
-    private func completeAppleLogin(_ result: Result<ASAuthorization, Error>) async {
-        guard case .success(let authorization) = result,
-              let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-              let identityData = credential.identityToken, let identityToken = String(data: identityData, encoding: .utf8),
-              let authorizationData = credential.authorizationCode, let authorizationCode = String(data: authorizationData, encoding: .utf8),
-              let nonce = appleNonce else {
-            if case .failure(let error) = result, (error as? ASAuthorizationError)?.code == .canceled { return }
-            appleMessage = "Apple 登录未完成，请重试。"
-            appleNonce = nil
-            return
-        }
-        isSubmitting = true
-        message = nil
-        appleNonce = nil
-        defer { isSubmitting = false }
-        do {
-            let session = try await APIClient().loginWithApple(identityToken: identityToken, authorizationCode: authorizationCode, nonce: nonce)
-            try TokenStore().save(accessToken: session.accessToken, refreshToken: session.refreshToken)
-            appModel.didAuthenticate()
-        } catch {
-            message = error.localizedDescription
-            await prepareAppleNonce()
-        }
-    }
 }
 
 private extension View {

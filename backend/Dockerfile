@@ -29,8 +29,7 @@ WORKDIR /app
 COPY --from=api-builder /out/measuretrail-api ./measuretrail-api
 COPY --from=api-builder /out/measuretrail-legacy-import ./measuretrail-legacy-import
 COPY --from=web-builder /src/web/dist ./web
-COPY backend/scripts/backup-sqlite.sh backend/scripts/restore-sqlite.sh backend/scripts/run-legacy-import.sh /app/scripts/
+COPY backend/scripts/backup-sqlite.sh backend/scripts/restore-sqlite.sh backend/scripts/run-legacy-import.sh backend/scripts/docker-entrypoint.sh /app/scripts/
 RUN chmod 0755 /app/scripts/*.sh && mkdir -p /app/backups /app/data /app/log && chown -R measuretrail:measuretrail /app
-USER measuretrail
 EXPOSE 21000
-ENTRYPOINT ["./measuretrail-api"]
+ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]

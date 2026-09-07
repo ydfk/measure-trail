@@ -35,7 +35,7 @@ struct OnboardingView: View {
                 appModel.completeOnboarding()
             }
             .buttonStyle(.borderedProminent)
-            .tint(MeasureTrailStyle.ink)
+            .tint(MeasureTrailStyle.accent)
             .controlSize(.large)
             .frame(maxWidth: .infinity)
         }

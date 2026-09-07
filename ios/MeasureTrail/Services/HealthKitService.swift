@@ -4,21 +4,34 @@ import Observation
 import SwiftData
 
 @Observable @MainActor final class HealthKitService {
-    enum Status: Equatable { case unavailable, notRequested, requested, syncing, synced(Int), denied, error(String) }
+    enum Status: Equatable { case unavailable, notRequested, requested, syncing, imported(Int), denied, error(String) }
 
     static let shared = HealthKitService()
 
     private static let originMetadataKey = "com.ydfk.measuretrail.origin"
     private static let originMetadataValue = "measuretrail"
+    private static let readAuthorizationRequestedKey = "healthKitReadAuthorizationRequested"
     private static let manualWriteEnabledKey = "healthKitManualWriteEnabled"
     private let store = HKHealthStore()
-    private(set) var status: Status = HKHealthStore.isHealthDataAvailable() ? .notRequested : .unavailable
-    private(set) var isManualWriteEnabled = UserDefaults.standard.bool(forKey: manualWriteEnabledKey)
+    private(set) var status: Status
+    private(set) var hasRequestedReadAuthorization: Bool
+    private(set) var isManualWriteEnabled: Bool
+
+    init() {
+        let hasRequestedReadAuthorization = UserDefaults.standard.bool(forKey: Self.readAuthorizationRequestedKey)
+        self.hasRequestedReadAuthorization = hasRequestedReadAuthorization
+        isManualWriteEnabled = UserDefaults.standard.bool(forKey: Self.manualWriteEnabledKey)
+        status = HKHealthStore.isHealthDataAvailable()
+            ? (hasRequestedReadAuthorization ? .requested : .notRequested)
+            : .unavailable
+    }
 
     func requestAuthorization() async {
         guard HKHealthStore.isHealthDataAvailable(), let bodyMass = HKObjectType.quantityType(forIdentifier: .bodyMass), let waist = HKObjectType.quantityType(forIdentifier: .waistCircumference) else { status = .unavailable; return }
         do {
             try await store.requestAuthorization(toShare: [], read: [bodyMass, waist])
+            UserDefaults.standard.set(true, forKey: Self.readAuthorizationRequestedKey)
+            hasRequestedReadAuthorization = true
             status = .requested
         } catch {
             status = .error("无法请求健康数据权限。")
@@ -29,7 +42,9 @@ import SwiftData
         guard HKHealthStore.isHealthDataAvailable(), let bodyMass = HKObjectType.quantityType(forIdentifier: .bodyMass), let waist = HKObjectType.quantityType(forIdentifier: .waistCircumference) else { status = .unavailable; return }
         do {
             try await store.requestAuthorization(toShare: [bodyMass, waist], read: [bodyMass, waist])
+            UserDefaults.standard.set(true, forKey: Self.readAuthorizationRequestedKey)
             UserDefaults.standard.set(true, forKey: Self.manualWriteEnabledKey)
+            hasRequestedReadAuthorization = true
             isManualWriteEnabled = true
             status = .requested
         } catch {
@@ -43,10 +58,12 @@ import SwiftData
     }
 
     func clearAccountState() {
+        UserDefaults.standard.removeObject(forKey: Self.readAuthorizationRequestedKey)
         UserDefaults.standard.removeObject(forKey: Self.manualWriteEnabledKey)
         UserDefaults.standard.removeObject(forKey: "healthKitAnchor.bodyMass")
         UserDefaults.standard.removeObject(forKey: "healthKitAnchor.waist")
         isManualWriteEnabled = false
+        hasRequestedReadAuthorization = false
         status = HKHealthStore.isHealthDataAvailable() ? .notRequested : .unavailable
     }
 
@@ -71,6 +88,7 @@ import SwiftData
 
     func synchronize(context: ModelContext) async {
         guard HKHealthStore.isHealthDataAvailable(), let bodyMass = HKObjectType.quantityType(forIdentifier: .bodyMass), let waist = HKObjectType.quantityType(forIdentifier: .waistCircumference) else { status = .unavailable; return }
+        guard hasRequestedReadAuthorization else { status = .notRequested; return }
         guard let session = TokenStore().session() else { status = .error("本地登录状态已失效。"); return }
         status = .syncing
         do {
@@ -93,7 +111,7 @@ import SwiftData
             saveAnchor(bodyChanges.anchor, key: "bodyMass")
             saveAnchor(waistChanges.anchor, key: "waist")
             try context.save()
-            status = .synced(importedCount)
+            status = .imported(importedCount)
         } catch {
             status = .error("HealthKit 同步暂未完成。")
         }

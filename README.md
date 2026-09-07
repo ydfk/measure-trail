@@ -17,7 +17,7 @@ MeasureTrail is a Chinese-first, privacy-conscious weight-tracking product being
 | --- | --- |
 | Product identity | MeasureTrail / 量迹 selected |
 | Repository | GitHub and Gitea remotes configured |
-| iOS app | SwiftUI iOS 26 app builds for the simulator; authentication, offline cache/outbox, dashboard notes, history filters, credential changes, trends, conflict handling, export, and automatic server configuration are implemented |
+| iOS app | SwiftUI iOS 26 app builds for the simulator; authentication, offline cache/outbox, dashboard notes, history filters, credential changes, trends, conflict handling, and automatic server configuration are implemented |
 | Backend | Go API, SQLite migrations, authentication, data APIs, and static Docker configuration are implemented |
 | Web app | Reserved for a future phase; not implemented |
 

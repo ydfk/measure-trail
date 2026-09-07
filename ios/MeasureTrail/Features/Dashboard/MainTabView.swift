@@ -14,7 +14,7 @@ struct MainTabView: View {
             InsightsView().tabItem { Label("趋势", systemImage: "waveform.path.ecg") }
             SettingsView().tabItem { Label("我的", systemImage: "person.crop.circle") }
         }
-        .tint(MeasureTrailStyle.ink)
+        .tint(MeasureTrailStyle.accent)
         .sheet(isPresented: $showingRecord) { RecordSheet() }
         .task(id: connectivity.isOnline) {
             guard connectivity.isOnline else { return }
@@ -72,7 +72,7 @@ private struct DashboardView: View {
                                 .foregroundStyle(.secondary)
                             Button(todayRecord == nil ? "记录今天" : "更新今天") { showingRecord = true }
                                 .buttonStyle(.borderedProminent)
-                                .tint(MeasureTrailStyle.ink)
+                                .tint(MeasureTrailStyle.accent)
                                 .frame(maxWidth: .infinity)
                         }
                         .padding()
@@ -81,7 +81,7 @@ private struct DashboardView: View {
                     ContentUnavailableView {
                         Label("从第一条记录开始", systemImage: "plus.circle")
                     } description: { Text("量迹会在你的节奏里呈现趋势，而不是催促你改变。") } actions: {
-                        Button("记录今天") { showingRecord = true }.buttonStyle(.borderedProminent).tint(MeasureTrailStyle.ink)
+                        Button("记录今天") { showingRecord = true }.buttonStyle(.borderedProminent).tint(MeasureTrailStyle.accent)
                     }
                 }
             }
@@ -121,7 +121,6 @@ private struct SettingsView: View {
     @State private var showingDeleteConfirmation = false
     @State private var showingHealthKitWriteConfirmation = false
     @State private var accountMessage: String?
-    @State private var exportURL: URL?
     var body: some View {
         NavigationStack {
             List {
@@ -133,14 +132,18 @@ private struct SettingsView: View {
                     NavigationLink { PasskeySettingsView() } label: { Label("Passkey", systemImage: "person.badge.key.fill") }
                     NavigationLink { SessionsView() } label: { Label("登录设备", systemImage: "laptopcomputer.and.iphone") }
                     Button("退出登录", role: .destructive) { Task { await signOut() } }
-                    Button("导出 CSV") { Task { await exportCSV() } }
-                    if let exportURL { ShareLink(item: exportURL) { Label("分享 CSV 文件", systemImage: "square.and.arrow.up") } }
                     Button("删除账号", role: .destructive) { showingDeleteConfirmation = true }
                 }
                 Section("HealthKit") {
-                    Text("同步会读取当天最新的体重和腰围；手工记录优先，备注、目标和同步版本不会写入健康数据。你可单独选择是否将之后的手工记录写入健康 App。").font(.footnote).foregroundStyle(.secondary)
-                    Button("连接 HealthKit") { Task { await healthKit.requestAuthorization() } }
-                    Button("同步 HealthKit") { Task { await healthKit.synchronize(context: modelContext) } }
+                    Text("导入会读取健康 App 中当天最新的体重和腰围；手工记录优先，备注、目标和量迹账户状态不会写入健康数据。你可单独选择是否将之后的手工记录写入健康 App。").font(.footnote).foregroundStyle(.secondary)
+                    if healthKit.hasRequestedReadAuthorization {
+                        Label("已请求 HealthKit 读取权限；授权由健康 App 管理。", systemImage: "checkmark.circle")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Button("连接 HealthKit") { Task { await healthKit.requestAuthorization() } }
+                    }
+                    Button("从 HealthKit 导入记录") { Task { await healthKit.synchronize(context: modelContext) } }
+                        .disabled(!healthKit.hasRequestedReadAuthorization || healthKit.status == .syncing)
                     Button(healthKit.isManualWriteEnabled ? "停止写入之后的手工记录" : "启用手工记录写入 HealthKit") {
                         if healthKit.isManualWriteEnabled {
                             healthKit.disableManualWrite()
@@ -149,23 +152,23 @@ private struct SettingsView: View {
                         }
                     }
                     switch healthKit.status {
-                    case .requested: Label("已请求权限，可继续使用手动记录。", systemImage: "checkmark.circle").foregroundStyle(.secondary)
-                    case .syncing: Label("正在同步 HealthKit。", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(.secondary)
-                    case .synced(let count): Label("已同步 \(count) 天的 HealthKit 记录。", systemImage: "checkmark.circle").foregroundStyle(.secondary)
+                    case .requested: EmptyView()
+                    case .syncing: Label("正在从 HealthKit 导入记录。", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(.secondary)
+                    case .imported(let count): Label(count == 0 ? "未发现可导入的 HealthKit 记录。请确认健康 App 的读取权限。" : "已从 HealthKit 导入 \(count) 天记录。", systemImage: count == 0 ? "info.circle" : "checkmark.circle").foregroundStyle(.secondary)
                     case .denied: Label("权限未授予，手动记录仍可使用。", systemImage: "exclamationmark.circle").foregroundStyle(.secondary)
                     case .unavailable: Label("此设备不支持 HealthKit。", systemImage: "xmark.circle").foregroundStyle(.secondary)
                     case .error(let message): Label(message, systemImage: "exclamationmark.circle").foregroundStyle(.secondary)
                     case .notRequested: EmptyView()
                     }
                 }
-                Section("隐私") { Label("数据将在登录后安全同步", systemImage: "lock") }
+                Section("隐私") { Label("记录会安全上传到量迹账户", systemImage: "lock") }
                 if let accountMessage { Section { Label(accountMessage, systemImage: "exclamationmark.circle").foregroundStyle(.secondary) } }
             }.navigationTitle("我的")
         }
         .alert("永久删除账号？", isPresented: $showingDeleteConfirmation) {
             Button("删除账号", role: .destructive) { Task { await deleteAccount() } }
             Button("取消", role: .cancel) {}
-        } message: { Text("所有已同步记录、会话和本机缓存将被删除，此操作不可恢复。") }
+        } message: { Text("所有已上传到量迹账户的记录、会话和本机缓存将被删除，此操作不可恢复。") }
         .alert("写入手工记录到健康 App？", isPresented: $showingHealthKitWriteConfirmation) {
             Button("启用") { Task { await healthKit.enableManualWrite() } }
             Button("取消", role: .cancel) {}
@@ -191,11 +194,5 @@ private struct SettingsView: View {
             return
         }
         if let refreshToken { try? await APIClient().logout(refreshToken: refreshToken) }
-    }
-
-    private func exportCSV() async {
-        guard let session = TokenStore().session() else { accountMessage = "本地登录状态已失效。"; return }
-        do { exportURL = try await APIClient().exportCSV(accessToken: session.accessToken) }
-        catch { accountMessage = error.localizedDescription }
     }
 }

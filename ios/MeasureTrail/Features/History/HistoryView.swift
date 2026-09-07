@@ -151,18 +151,20 @@ private struct MeasurementRow: View {
                     .foregroundStyle(.primary)
                     .lineLimit(2)
             }
-            Text(syncDescription)
-                .font(.caption)
-                .foregroundStyle(measurement.syncState == "conflict" ? .orange : .secondary)
+            if let syncDescription {
+                Text(syncDescription)
+                    .font(.caption)
+                    .foregroundStyle(measurement.syncState == "conflict" ? .orange : .secondary)
+            }
         }
         .accessibilityElement(children: .combine)
     }
 
-    private var syncDescription: String {
+    private var syncDescription: String? {
         switch measurement.syncState {
-        case "synced": "已同步"
+        case "synced": nil
         case "conflict": "需要处理同步冲突"
-        default: "等待同步"
+        default: "等待上传到量迹账户"
         }
     }
 }

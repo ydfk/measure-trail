@@ -30,13 +30,17 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["邮箱"].exists)
         XCTAssertTrue(app.buttons["authentication-submit"].isHittable)
         XCTAssertTrue(app.buttons["authentication-passkey"].isHittable)
+        XCTAssertFalse(app.buttons["使用 Apple 登录"].exists)
         XCTAssertFalse(app.buttons["authentication-submit"].isEnabled)
 
         let username = app.textFields["authentication-username"]
-        XCTAssertEqual(username.value as? String, "admin")
+        XCTAssertEqual(username.value as? String, "输入用户名")
         let password = app.secureTextFields["authentication-password"]
         password.tap()
         password.typeText("111111")
+        XCTAssertFalse(app.buttons["authentication-submit"].isEnabled)
+        username.tap()
+        username.typeText("admin")
         XCTAssertTrue(app.buttons["authentication-submit"].isEnabled)
     }
 }

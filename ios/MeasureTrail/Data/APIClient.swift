@@ -38,17 +38,6 @@ struct APIClient: Sendable {
         try await send(path: "/api/v1/auth/login", body: Credentials(username: username, password: password, deviceLabel: "iPhone"))
     }
 
-    func newAppleNonce() async throws -> String {
-        struct Response: Decodable { let nonce: String }
-        let response: Response = try await send(path: "/api/v1/auth/apple/nonce", body: EmptyRequest())
-        return response.nonce
-    }
-
-    func loginWithApple(identityToken: String, authorizationCode: String, nonce: String) async throws -> SessionResponse {
-        struct Payload: Encodable { let identityToken: String; let authorizationCode: String; let nonce: String; let deviceLabel: String }
-        return try await send(path: "/api/v1/auth/apple", body: Payload(identityToken: identityToken, authorizationCode: authorizationCode, nonce: nonce, deviceLabel: "iPhone"))
-    }
-
     func refresh(refreshToken: String) async throws -> SessionResponse {
         struct Payload: Encodable { let refreshToken: String; let deviceLabel: String }
         return try await send(path: "/api/v1/auth/refresh", body: Payload(refreshToken: refreshToken, deviceLabel: "iPhone"))
@@ -263,17 +252,6 @@ struct APIClient: Sendable {
         guard (200...299).contains(httpResponse.statusCode) else { throw APIError.rejected((try? JSONDecoder().decode(Problem.self, from: data))?.detail ?? "账号删除未完成。") }
     }
 
-    func exportCSV(accessToken: String) async throws -> URL {
-        guard let baseURL, let url = URL(string: "/api/v1/account/export.csv", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        let (data, httpResponse) = try await authorizedData(for: request, accessToken: accessToken)
-        guard (200...299).contains(httpResponse.statusCode) else { throw APIError.rejected((try? JSONDecoder().decode(Problem.self, from: data))?.detail ?? "导出未完成。") }
-        let fileURL = FileManager.default.temporaryDirectory.appending(path: "measuretrail-export.csv")
-        try data.write(to: fileURL, options: .atomic)
-        return fileURL
-    }
-
     private func send<Body: Encodable, Response: Decodable>(path: String, body: Body) async throws -> Response {
         guard let baseURL, let url = URL(string: path, relativeTo: baseURL) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
@@ -323,7 +301,6 @@ struct APIClient: Sendable {
 }
 
 private struct Credentials: Encodable { let username: String; let password: String; let deviceLabel: String }
-private struct EmptyRequest: Encodable {}
 private struct EmptyResponse: Decodable {}
 private struct HealthResponse: Decodable { let status: String }
 private struct Problem: Decodable { let detail: String? }
