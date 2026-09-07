@@ -34,11 +34,7 @@ func main() {
 			panic(err)
 		}
 	}
-	notifier, err := auth.NewNotifier(appConfig.Mail, appConfig.App.PublicBaseURL)
-	if err != nil {
-		panic(err)
-	}
-	app := server.New(appConfig, db, authService, notifier, auth.NewAppleVerifier(appConfig.Apple))
+	app := server.New(appConfig, db, authService, auth.NewAppleVerifier(appConfig.Apple))
 	response, err := app.Test(httptest.NewRequest("GET", "/openapi.json", nil))
 	if err != nil {
 		panic(err)

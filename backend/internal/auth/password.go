@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -50,7 +52,24 @@ func verifyPassword(encodedHash string, password string) bool {
 }
 
 func passwordIsValid(password string) bool {
-	return len(password) >= 12 && len(password) <= 128
+	return len(password) >= 6 && len(password) <= 128
+}
+
+func normalizeUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
+}
+
+func usernameIsValid(username string) bool {
+	username = strings.TrimSpace(username)
+	if count := utf8.RuneCountInString(username); count < 3 || count > 32 {
+		return false
+	}
+	for _, character := range username {
+		if !unicode.IsLetter(character) && !unicode.IsDigit(character) && character != '.' && character != '_' && character != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func parsePositive(value string) (uint32, bool) {

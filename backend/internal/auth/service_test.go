@@ -11,7 +11,7 @@ import (
 	"github.com/ydfk/measure-trail/backend/internal/database"
 )
 
-func TestRegisterVerifyLoginAndRefreshRotation(t *testing.T) {
+func TestUsernameLoginAndRefreshRotation(t *testing.T) {
 	db, err := database.Open(config.Database{Path: filepath.Join(t.TempDir(), "measuretrail.sqlite"), BusyTimeoutMS: 1000})
 	if err != nil {
 		t.Fatalf("打开数据库: %v", err)
@@ -29,9 +29,6 @@ func TestRegisterVerifyLoginAndRefreshRotation(t *testing.T) {
 	verification, err := service.Register(" User@Example.com ", "correct-horse-battery-staple")
 	if err != nil {
 		t.Fatalf("注册: %v", err)
-	}
-	if _, err := service.Login("user@example.com", "correct-horse-battery-staple", "测试设备"); !errors.Is(err, ErrEmailNotVerified) {
-		t.Fatalf("未验证登录 error = %v, want ErrEmailNotVerified", err)
 	}
 	if err := service.VerifyEmail(verification); err != nil {
 		t.Fatalf("验证邮箱: %v", err)
@@ -70,6 +67,44 @@ func TestRegisterVerifyLoginAndRefreshRotation(t *testing.T) {
 	}
 	if _, err := service.Login("user@example.com", "new-correct-horse-battery-staple", "测试设备"); err != nil {
 		t.Fatalf("新密码登录: %v", err)
+	}
+}
+
+func TestDefaultUserCreatedOnceAndCredentialsCanChange(t *testing.T) {
+	db, err := database.Open(config.Database{Path: filepath.Join(t.TempDir(), "measuretrail.sqlite"), BusyTimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.EnsureDefaultUser("admin", "111111"); err != nil {
+		t.Fatal(err)
+	}
+	session, err := service.Login("ADMIN", "111111", "测试设备")
+	if err != nil {
+		t.Fatalf("默认账号登录失败: %v", err)
+	}
+	userID, err := service.UserIDFromAccessToken(session.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.UpdateCredentials(userID, "111111", "owner", "654321"); err != nil {
+		t.Fatalf("修改凭证失败: %v", err)
+	}
+	if _, err := service.Login("admin", "111111", "测试设备"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("旧凭证仍可登录: %v", err)
+	}
+	if _, err := service.Login("owner", "654321", "测试设备"); err != nil {
+		t.Fatalf("新凭证无法登录: %v", err)
+	}
+	if err := service.EnsureDefaultUser("admin", "111111"); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Table("users").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("修改默认用户名后再次引导的账号数=%d, error=%v", count, err)
 	}
 }
 

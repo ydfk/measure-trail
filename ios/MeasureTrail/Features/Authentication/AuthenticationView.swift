@@ -5,17 +5,16 @@ struct AuthenticationView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focusedField: Field?
-    @State private var email = ""
+    @State private var username = "admin"
     @State private var password = ""
     @State private var message: String?
     @State private var appleMessage: String?
     @State private var isSubmitting = false
     @State private var appleNonce: String?
-    @State private var showingPasswordReset = false
 
-    private enum Field { case email, password }
+    private enum Field { case username, password }
     private var canSubmit: Bool {
-        !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && password.count >= 12 && !isSubmitting
+        username.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 && password.count >= 6 && !isSubmitting
     }
 
     var body: some View {
@@ -61,7 +60,6 @@ struct AuthenticationView: View {
             .toolbar(.hidden, for: .navigationBar)
             .tint(colorScheme == .dark ? MeasureTrailStyle.blue : MeasureTrailStyle.ink)
             .task { await prepareAppleNonce() }
-            .sheet(isPresented: $showingPasswordReset) { PasswordResetSheet(email: email) }
         }
     }
 
@@ -87,17 +85,16 @@ struct AuthenticationView: View {
     private var credentials: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("邮箱").font(.subheadline.weight(.medium))
-                TextField("输入邮箱地址", text: $email, prompt: Text("输入邮箱地址").foregroundColor(Color(uiColor: .secondaryLabel)))
+                Text("用户名").font(.subheadline.weight(.medium))
+                TextField("输入用户名", text: $username, prompt: Text("输入用户名").foregroundColor(Color(uiColor: .secondaryLabel)))
                     .textContentType(.username)
-                    .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .focused($focusedField, equals: .email)
+                    .focused($focusedField, equals: .username)
                     .submitLabel(.next)
                     .onSubmit { focusedField = .password }
-                    .accessibilityLabel("邮箱")
-                    .accessibilityIdentifier("authentication-email")
+                    .accessibilityLabel("用户名")
+                    .accessibilityIdentifier("authentication-username")
                     .loginInputSurface()
             }
             VStack(alignment: .leading, spacing: 8) {
@@ -111,10 +108,6 @@ struct AuthenticationView: View {
                     .accessibilityIdentifier("authentication-password")
                     .loginInputSurface()
             }
-            Button("忘记密码？") { showingPasswordReset = true }
-                .font(.subheadline)
-                .frame(minHeight: 44)
-                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .disabled(isSubmitting)
     }
@@ -127,7 +120,6 @@ struct AuthenticationView: View {
                 Rectangle().fill(Color(uiColor: .separator)).frame(height: 0.5)
             }
             SignInWithAppleButton(.signIn) { request in
-                request.requestedScopes = [.email]
                 request.nonce = appleNonce
             } onCompletion: { result in
                 Task { await completeAppleLogin(result) }
@@ -155,7 +147,7 @@ struct AuthenticationView: View {
         message = nil
         defer { isSubmitting = false }
         do {
-            let session = try await APIClient().login(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
+            let session = try await APIClient().login(username: username.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
             try TokenStore().save(accessToken: session.accessToken, refreshToken: session.refreshToken)
             appModel.didAuthenticate()
         } catch { message = error.localizedDescription }
@@ -165,7 +157,7 @@ struct AuthenticationView: View {
         guard appleNonce == nil else { return }
         appleMessage = nil
         do { appleNonce = try await APIClient().newAppleNonce() }
-        catch { appleMessage = "Apple 登录暂不可用，可使用邮箱登录。" }
+        catch { appleMessage = "Apple 登录暂不可用，可使用用户名登录。" }
     }
 
     private func completeAppleLogin(_ result: Result<ASAuthorization, Error>) async {
@@ -200,67 +192,5 @@ private extension View {
             .padding(.vertical, 16)
             .frame(minHeight: 54)
             .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-    }
-}
-
-private struct PasswordResetSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var email: String
-    @State private var token = ""
-    @State private var password = ""
-    @State private var confirmation = ""
-    @State private var message: String?
-    @State private var isSubmitting = false
-
-    init(email: String) { _email = State(initialValue: email) }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("申请重置") {
-                    TextField("邮箱", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("发送重置邮件") { Task { await requestReset() } }.disabled(email.isEmpty || isSubmitting)
-                    Text("无论该邮箱是否已注册，都会显示相同的提交结果，以保护账号隐私。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                Section("设置新密码") {
-                    TextField("邮件中的重置令牌", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    SecureField("新密码（至少 12 位）", text: $password).textContentType(.newPassword)
-                    SecureField("再次输入新密码", text: $confirmation).textContentType(.newPassword)
-                    Button("重置密码") { Task { await completeReset() } }
-                        .disabled(token.count < 20 || password.count < 12 || password != confirmation || isSubmitting)
-                }
-                if let message { Section { Label(message, systemImage: "envelope.badge").foregroundStyle(.secondary) } }
-            }
-            .navigationTitle("重置密码")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } } }
-        }
-    }
-
-    private func requestReset() async {
-        isSubmitting = true
-        defer { isSubmitting = false }
-        do {
-            try await APIClient().requestPasswordReset(email: email)
-            message = "如果该邮箱可用，重置邮件已发送。请复制邮件中的令牌后设置新密码。"
-        } catch {
-            message = error.localizedDescription
-        }
-    }
-
-    private func completeReset() async {
-        guard password == confirmation else { message = "两次输入的密码不一致。"; return }
-        isSubmitting = true
-        defer { isSubmitting = false }
-        do {
-            try await APIClient().resetPassword(token: token, password: password)
-            password = ""
-            confirmation = ""
-            token = ""
-            message = "密码已重置。现在可以返回登录。"
-        } catch {
-            message = error.localizedDescription
-        }
     }
 }

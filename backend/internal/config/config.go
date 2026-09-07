@@ -25,6 +25,7 @@ type App struct {
 	Environment   string
 	PublicBaseURL string
 	CORSOrigins   []string
+	WebRoot       string
 }
 
 type Database struct {
@@ -34,6 +35,8 @@ type Database struct {
 
 type Auth struct {
 	RegistrationEnabled bool
+	DefaultUsername     string
+	DefaultPassword     string
 	Issuer              string
 	Audience            string
 	AccessSecret        string
@@ -61,10 +64,6 @@ type Apple struct {
 }
 
 func Load() (Config, error) {
-	registrationEnabled, err := strconv.ParseBool(value("MEASURETRAIL_REGISTRATION_ENABLED", "false"))
-	if err != nil {
-		return Config{}, fmt.Errorf("MEASURETRAIL_REGISTRATION_ENABLED 必须是布尔值: %w", err)
-	}
 	environment := value("MEASURETRAIL_ENV", "development")
 	publicBaseURL := value("MEASURETRAIL_PUBLIC_BASE_URL", "http://localhost:21000")
 	corsOrigins, err := parseCORSOrigins(value("MEASURETRAIL_CORS_ORIGINS", publicBaseURL), strings.EqualFold(environment, "production"))
@@ -77,16 +76,18 @@ func Load() (Config, error) {
 			Environment:   environment,
 			PublicBaseURL: publicBaseURL,
 			CORSOrigins:   corsOrigins,
+			WebRoot:       value("MEASURETRAIL_WEB_ROOT", "../web/dist"),
 		},
 		Database: Database{
 			Path: value("MEASURETRAIL_SQLITE_PATH", "data/measuretrail.sqlite"),
 		},
 		Auth: Auth{
-			RegistrationEnabled: registrationEnabled,
-			Issuer:              value("MEASURETRAIL_JWT_ISSUER", "measuretrail"),
-			Audience:            value("MEASURETRAIL_JWT_AUDIENCE", "measuretrail-ios"),
-			AccessSecret:        strings.TrimSpace(os.Getenv("MEASURETRAIL_JWT_ACCESS_SECRET")),
-			RefreshSecret:       strings.TrimSpace(os.Getenv("MEASURETRAIL_JWT_REFRESH_SECRET")),
+			DefaultUsername: value("MEASURETRAIL_DEFAULT_USERNAME", "admin"),
+			DefaultPassword: value("MEASURETRAIL_DEFAULT_PASSWORD", "111111"),
+			Issuer:          value("MEASURETRAIL_JWT_ISSUER", "measuretrail"),
+			Audience:        value("MEASURETRAIL_JWT_AUDIENCE", "measuretrail-ios"),
+			AccessSecret:    strings.TrimSpace(os.Getenv("MEASURETRAIL_JWT_ACCESS_SECRET")),
+			RefreshSecret:   strings.TrimSpace(os.Getenv("MEASURETRAIL_JWT_REFRESH_SECRET")),
 		},
 		Mail: Mail{
 			Mode:     value("MEASURETRAIL_MAIL_MODE", "log"),
@@ -113,6 +114,12 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("MEASURETRAIL_SQLITE_BUSY_TIMEOUT_MS 必须是正整数")
 	}
 	config.Database.BusyTimeoutMS = busyTimeout
+	if username := strings.TrimSpace(config.Auth.DefaultUsername); len(username) < 3 || len(username) > 32 {
+		return Config{}, fmt.Errorf("MEASURETRAIL_DEFAULT_USERNAME 必须为 3 至 32 个字符")
+	}
+	if len(config.Auth.DefaultPassword) < 6 || len(config.Auth.DefaultPassword) > 128 {
+		return Config{}, fmt.Errorf("MEASURETRAIL_DEFAULT_PASSWORD 必须为 6 至 128 个字符")
+	}
 	if strings.EqualFold(config.App.Environment, "production") {
 		if err := validateProduction(config); err != nil {
 			return Config{}, err
@@ -131,9 +138,6 @@ func validateProduction(config Config) error {
 	}
 	if invalidProductionSecret(config.Auth.AccessSecret) || invalidProductionSecret(config.Auth.RefreshSecret) {
 		return fmt.Errorf("生产环境 JWT secret 必须是至少 32 个字符的非占位值")
-	}
-	if !strings.EqualFold(config.Mail.Mode, "smtp") || config.Mail.Host == "" || config.Mail.From == "" {
-		return fmt.Errorf("生产环境必须配置 SMTP host、from 与 smtp 邮件模式")
 	}
 	return nil
 }

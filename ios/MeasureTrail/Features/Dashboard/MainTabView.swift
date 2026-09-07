@@ -49,6 +49,16 @@ private struct DashboardView: View {
                                 Text(latest.recordedOn, format: .dateTime.year().month().day())
                                     .font(.callout)
                                     .foregroundStyle(.secondary)
+                                Divider().padding(.vertical, 4)
+                                Label {
+                                    Text(latest.note.isEmpty ? "这条记录没有备注" : latest.note)
+                                        .foregroundStyle(latest.note.isEmpty ? .secondary : .primary)
+                                        .lineLimit(3)
+                                } icon: {
+                                    Image(systemName: "note.text")
+                                        .foregroundStyle(MeasureTrailStyle.blue)
+                                }
+                                .font(.callout)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .measureTrailActionSurface()
@@ -119,6 +129,7 @@ private struct SettingsView: View {
                     NavigationLink { ProfileSettingsView() } label: { Label("资料与目标", systemImage: "target") }
                 }
                 Section("账号") {
+                    NavigationLink { AccountCredentialsView() } label: { Label("用户名与密码", systemImage: "person.badge.key") }
                     NavigationLink { SessionsView() } label: { Label("登录设备", systemImage: "laptopcomputer.and.iphone") }
                     Button("退出登录", role: .destructive) { Task { await signOut() } }
                     Button("导出 CSV") { Task { await exportCSV() } }

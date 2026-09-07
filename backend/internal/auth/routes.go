@@ -12,15 +12,9 @@ import (
 
 type credentialsInput struct {
 	Body struct {
-		Email       string `json:"email" format:"email" required:"true"`
-		Password    string `json:"password" minLength:"12" required:"true"`
+		Username    string `json:"username" minLength:"3" maxLength:"32" required:"true"`
+		Password    string `json:"password" minLength:"6" maxLength:"128" required:"true"`
 		DeviceLabel string `json:"deviceLabel" maxLength:"128"`
-	}
-}
-
-type verifyInput struct {
-	Body struct {
-		Token string `json:"token" minLength:"20" required:"true"`
 	}
 }
 
@@ -28,19 +22,6 @@ type refreshInput struct {
 	Body struct {
 		RefreshToken string `json:"refreshToken" minLength:"20" required:"true"`
 		DeviceLabel  string `json:"deviceLabel" maxLength:"128"`
-	}
-}
-
-type emailInput struct {
-	Body struct {
-		Email string `json:"email" format:"email" required:"true"`
-	}
-}
-
-type resetPasswordInput struct {
-	Body struct {
-		Token    string `json:"token" minLength:"20" required:"true"`
-		Password string `json:"password" minLength:"12" required:"true"`
 	}
 }
 
@@ -90,45 +71,26 @@ type sessionOutput struct {
 	}
 }
 
-func RegisterRoutes(api huma.API, service *Service, notifier Notifier, appleVerifier AppleVerifier, appleTokenClient AppleTokenClient) {
-	huma.Register(api, huma.Operation{OperationID: "register", Method: http.MethodPost, Path: "/api/v1/auth/register", Summary: "注册账号（默认关闭）", Errors: []int{http.StatusBadRequest, http.StatusForbidden, http.StatusServiceUnavailable}, Tags: []string{"认证"}}, func(ctx context.Context, input *credentialsInput) (*struct{}, error) {
-		verificationToken, err := service.Register(input.Body.Email, input.Body.Password)
-		if errors.Is(err, ErrRegistrationClosed) {
-			return nil, huma.Error403Forbidden(ErrRegistrationClosed.Error())
-		}
-		if err != nil {
-			return nil, huma.Error400BadRequest("无法创建账号")
-		}
-		if err := notifier.SendVerification(ctx, input.Body.Email, verificationToken); err != nil {
-			return nil, huma.Error503ServiceUnavailable("验证邮件暂时无法发送")
-		}
-		return &struct{}{}, nil
-	})
-	huma.Register(api, huma.Operation{OperationID: "verify-email", Method: http.MethodPost, Path: "/api/v1/auth/verify-email", Summary: "验证邮箱", Tags: []string{"认证"}}, func(_ context.Context, input *verifyInput) (*struct{}, error) {
-		if err := service.VerifyEmail(input.Body.Token); err != nil {
-			return nil, huma.Error400BadRequest("验证链接无效或已过期")
-		}
-		return &struct{}{}, nil
-	})
-	huma.Register(api, huma.Operation{OperationID: "resend-verification", Method: http.MethodPost, Path: "/api/v1/auth/resend-verification", Summary: "重发验证邮件", Tags: []string{"认证"}}, func(ctx context.Context, input *emailInput) (*struct{}, error) {
-		token, err := service.ResendVerification(input.Body.Email)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("无法发送验证邮件")
-		}
-		if token != "" {
-			if err := notifier.SendVerification(ctx, input.Body.Email, token); err != nil {
-				return nil, huma.Error503ServiceUnavailable("验证邮件暂时无法发送")
-			}
-		}
-		return &struct{}{}, nil
-	})
+type credentialsOutput struct {
+	Body struct {
+		Username string `json:"username"`
+	}
+}
+
+type updateCredentialsInput struct {
+	Authorization string `header:"Authorization"`
+	Body          struct {
+		CurrentPassword string `json:"currentPassword" minLength:"6" maxLength:"128" required:"true"`
+		Username        string `json:"username,omitempty" maxLength:"32"`
+		Password        string `json:"password,omitempty" maxLength:"128"`
+	}
+}
+
+func RegisterRoutes(api huma.API, service *Service, appleVerifier AppleVerifier, appleTokenClient AppleTokenClient) {
 	huma.Register(api, huma.Operation{OperationID: "login", Method: http.MethodPost, Path: "/api/v1/auth/login", Summary: "登录", Tags: []string{"认证"}}, func(_ context.Context, input *credentialsInput) (*sessionOutput, error) {
-		session, err := service.Login(input.Body.Email, input.Body.Password, input.Body.DeviceLabel)
-		if errors.Is(err, ErrEmailNotVerified) {
-			return nil, huma.Error403Forbidden("邮箱尚未验证")
-		}
+		session, err := service.Login(input.Body.Username, input.Body.Password, input.Body.DeviceLabel)
 		if err != nil {
-			return nil, huma.Error401Unauthorized("邮箱或密码不正确")
+			return nil, huma.Error401Unauthorized("用户名或密码不正确")
 		}
 		return outputSession(session), nil
 	})
@@ -139,12 +101,6 @@ func RegisterRoutes(api huma.API, service *Service, notifier Notifier, appleVeri
 		}
 		if errors.Is(err, ErrAppleUnavailable) {
 			return nil, huma.Error503ServiceUnavailable("Sign in with Apple 尚未配置")
-		}
-		if errors.Is(err, ErrAppleAccountLinkRequired) {
-			return nil, huma.Error409Conflict("请先登录已有账号，再在账号设置中绑定 Apple")
-		}
-		if errors.Is(err, ErrAppleEmailRequired) {
-			return nil, huma.Error400BadRequest("Apple 未提供可用邮箱")
 		}
 		if err != nil {
 			return nil, huma.Error401Unauthorized("Apple 凭据无效")
@@ -170,24 +126,6 @@ func RegisterRoutes(api huma.API, service *Service, notifier Notifier, appleVeri
 	huma.Register(api, huma.Operation{OperationID: "logout", Method: http.MethodPost, Path: "/api/v1/auth/logout", Summary: "退出当前会话", Tags: []string{"认证"}}, func(_ context.Context, input *refreshInput) (*struct{}, error) {
 		if err := service.Logout(input.Body.RefreshToken); err != nil {
 			return nil, huma.Error500InternalServerError("退出会话失败")
-		}
-		return &struct{}{}, nil
-	})
-	huma.Register(api, huma.Operation{OperationID: "forgot-password", Method: http.MethodPost, Path: "/api/v1/auth/forgot-password", Summary: "请求重置密码", Tags: []string{"认证"}}, func(ctx context.Context, input *emailInput) (*struct{}, error) {
-		token, err := service.RequestPasswordReset(input.Body.Email)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("无法请求密码重置")
-		}
-		if token != "" {
-			if err := notifier.SendPasswordReset(ctx, input.Body.Email, token); err != nil {
-				return nil, huma.Error503ServiceUnavailable("邮件服务暂时不可用")
-			}
-		}
-		return &struct{}{}, nil
-	})
-	huma.Register(api, huma.Operation{OperationID: "reset-password", Method: http.MethodPost, Path: "/api/v1/auth/reset-password", Summary: "重置密码", Tags: []string{"认证"}}, func(_ context.Context, input *resetPasswordInput) (*struct{}, error) {
-		if err := service.ResetPassword(input.Body.Token, input.Body.Password); err != nil {
-			return nil, huma.Error400BadRequest("重置链接无效、已过期或密码不符合要求")
 		}
 		return &struct{}{}, nil
 	})
@@ -227,6 +165,36 @@ func RegisterRoutes(api huma.API, service *Service, notifier Notifier, appleVeri
 				return nil, huma.Error503ServiceUnavailable("Apple 凭据撤销服务未配置")
 			}
 			return nil, huma.Error404NotFound("账号不存在或凭据撤销失败")
+		}
+		return &struct{}{}, nil
+	})
+	huma.Register(api, protectedOperation(huma.Operation{OperationID: "get-account-credentials", Method: http.MethodGet, Path: "/api/v1/account/credentials", Summary: "读取登录用户名", Tags: []string{"账号"}}), func(_ context.Context, input *accessTokenInput) (*credentialsOutput, error) {
+		userID, err := UserIDFromAuthorization(service, input.Authorization)
+		if err != nil {
+			return nil, huma.Error401Unauthorized("access token 无效")
+		}
+		username, err := service.Username(userID)
+		if err != nil {
+			return nil, huma.Error404NotFound("账号不存在")
+		}
+		output := &credentialsOutput{}
+		output.Body.Username = username
+		return output, nil
+	})
+	huma.Register(api, protectedOperation(huma.Operation{OperationID: "update-account-credentials", Method: http.MethodPatch, Path: "/api/v1/account/credentials", Summary: "修改用户名或密码", Errors: []int{http.StatusBadRequest, http.StatusConflict}, Tags: []string{"账号"}}), func(_ context.Context, input *updateCredentialsInput) (*struct{}, error) {
+		userID, err := UserIDFromAuthorization(service, input.Authorization)
+		if err != nil {
+			return nil, huma.Error401Unauthorized("access token 无效")
+		}
+		err = service.UpdateCredentials(userID, input.Body.CurrentPassword, input.Body.Username, input.Body.Password)
+		if errors.Is(err, ErrInvalidCredentials) {
+			return nil, huma.Error401Unauthorized("当前密码不正确")
+		}
+		if errors.Is(err, ErrUsernameTaken) {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+		if err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return &struct{}{}, nil
 	})

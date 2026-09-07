@@ -34,22 +34,8 @@ struct APIClient: Sendable {
         guard response.status == "ok" else { throw APIError.rejected("服务器未就绪。") }
     }
 
-    func login(email: String, password: String) async throws -> SessionResponse {
-        try await send(path: "/api/v1/auth/login", body: Credentials(email: email, password: password, deviceLabel: "iPhone"))
-    }
-
-    func register(email: String, password: String) async throws {
-        let _: EmptyResponse = try await send(path: "/api/v1/auth/register", body: Credentials(email: email, password: password, deviceLabel: "iPhone"))
-    }
-
-    func requestPasswordReset(email: String) async throws {
-        struct Payload: Encodable { let email: String }
-        let _: EmptyResponse = try await send(path: "/api/v1/auth/forgot-password", body: Payload(email: email))
-    }
-
-    func resetPassword(token: String, password: String) async throws {
-        struct Payload: Encodable { let token: String; let password: String }
-        let _: EmptyResponse = try await send(path: "/api/v1/auth/reset-password", body: Payload(token: token, password: password))
+    func login(username: String, password: String) async throws -> SessionResponse {
+        try await send(path: "/api/v1/auth/login", body: Credentials(username: username, password: password, deviceLabel: "iPhone"))
     }
 
     func newAppleNonce() async throws -> String {
@@ -87,6 +73,10 @@ struct APIClient: Sendable {
         let deviceLabel: String
         let createdAt: String
         let expiresAt: String
+    }
+
+    struct AccountCredentials: Decodable, Sendable {
+        let username: String
     }
 
     struct MeasurementChange: Decodable, Sendable {
@@ -224,6 +214,31 @@ struct APIClient: Sendable {
         guard (200...299).contains(httpResponse.statusCode) else { throw responseError(data, statusCode: httpResponse.statusCode, fallback: "会话撤销未完成。") }
     }
 
+    func accountCredentials(accessToken: String) async throws -> AccountCredentials {
+        guard let baseURL, let url = URL(string: "/api/v1/account/credentials", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let (data, httpResponse) = try await authorizedData(for: request, accessToken: accessToken)
+        guard (200...299).contains(httpResponse.statusCode) else { throw responseError(data, statusCode: httpResponse.statusCode, fallback: "无法读取登录信息。") }
+        return try JSONDecoder().decode(AccountCredentials.self, from: data)
+    }
+
+    func updateAccountCredentials(currentPassword: String, username: String?, password: String?, accessToken: String) async throws {
+        struct Payload: Encodable {
+            let currentPassword: String
+            let username: String?
+            let password: String?
+        }
+        guard let baseURL, let url = URL(string: "/api/v1/account/credentials", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(Payload(currentPassword: currentPassword, username: username, password: password))
+        let (data, httpResponse) = try await authorizedData(for: request, accessToken: accessToken)
+        guard (200...299).contains(httpResponse.statusCode) else { throw responseError(data, statusCode: httpResponse.statusCode, fallback: "登录信息未保存。") }
+    }
+
     func updateProfile(heightMM: Int?, targetWeightG: Int?, preferredUnit: String, timezone: String, accessToken: String) async throws -> ProfileResponse {
         struct Payload: Encodable { let heightMM: Int?; let targetWeightG: Int?; let preferredUnit: String; let timezone: String }
         guard let baseURL, let url = URL(string: "/api/v1/profile", relativeTo: baseURL) else { throw APIError.invalidEndpoint }
@@ -307,7 +322,7 @@ struct APIClient: Sendable {
     }
 }
 
-private struct Credentials: Encodable { let email: String; let password: String; let deviceLabel: String }
+private struct Credentials: Encodable { let username: String; let password: String; let deviceLabel: String }
 private struct EmptyRequest: Encodable {}
 private struct EmptyResponse: Decodable {}
 private struct HealthResponse: Decodable { let status: String }

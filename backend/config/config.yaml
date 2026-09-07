@@ -2,6 +2,10 @@ app:
   port: "21000"
   env: development
   public_base_url: http://localhost:21000
+  web_root: ../web/dist
+auth:
+  default_username: admin
+  default_password: "111111"
 database:
   path: data/measuretrail.sqlite
   busy_timeout_ms: 5000

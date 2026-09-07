@@ -16,8 +16,8 @@
 | 范围 | 当前状态 |
 | --- | --- |
 | 产品标识 | 已确定 MeasureTrail / 量迹 |
-| 仓库 | 已初始化本地 Git 仓库；尚未配置远程仓库 |
-| iOS 应用 | iOS 26 SwiftUI 应用已可通过模拟器构建；认证、离线缓存/Outbox、资料、记录、趋势、冲突处理、导出和自动服务环境配置已实现 |
+| 仓库 | 已配置 GitHub 与 Gitea 远程仓库 |
+| iOS 应用 | iOS 26 SwiftUI 应用已可通过模拟器构建；认证、离线缓存/Outbox、概览备注、历史筛选、账号凭证修改、趋势、冲突处理、导出和自动服务环境配置已实现 |
 | 后端 | Go API、SQLite migration、认证、数据接口和 Docker 静态配置已实现 |
 | Web 应用 | 为未来阶段预留；尚未实现 |
 
@@ -25,7 +25,7 @@
 
 - 记录每日体重，以及可选的腰围和备注。
 - 提供趋势、目标、BMI、历史与适合手机查看的洞察。
-- 支持邮箱密码认证、通过 Apple 登录，以及未来多客户端同步；暂不开放注册。
+- 使用用户名密码认证，首次启动引导默认账号；已绑定身份可通过 Apple 登录，并支持未来多客户端同步。暂不开放注册和邮箱找回密码。
 - 提供可选的 HealthKit 集成，健康数据的读取和写入始终由用户控制。
 - 当前产品范围不包含 CSV 导入和提醒。
 
@@ -56,4 +56,4 @@ measure-trail/
 
 ## Development
 
-iOS 应用自动选择服务器：Debug 模拟器连接 `http://localhost:21000`，真机及 Release 连接 `https://measure-api.ydfk.site`，可通过构建配置覆盖。iOS 暂时隐藏注册，后端默认禁止邮箱注册与 Apple 自动开户。模拟器构建与 29 个 XCTest/UI 测试已通过，其中包含旧版本编辑与离线新设备同日记录的本地冲突捕获、退出及删号时完整清理本机缓存、决策规则、构建环境选择与登录流程、概览记录数渲染和网络恢复后自动同步；Docker smoke 验证已完成，最终 HTTPS 部署、HealthKit 读写、真机通过 Apple 登录、跨设备冲突与其余端到端 UI 测试和 App Store 发布门禁仍未完成。
+iOS 应用自动选择服务器：Debug 模拟器连接 `http://localhost:21000`，真机及 Release 连接 `https://measure-api.ydfk.site`，地址配置在 Xcode target Build Settings 的 `MEASURETRAIL_API_BASE_URL`。后端首次启动默认创建 `admin` / `111111`，也可由环境变量注入；用户可在“我的”修改用户名和密码。Docker 镜像由 Go 单进程同时提供 `/api` 与未来 Vue/React 的静态构建产物，并提供生产 Compose 示例与安全环境生成脚本。最终 HTTPS 部署、HealthKit 读写、真机通过 Apple 登录、跨设备冲突和 App Store 发布门禁仍未完成。

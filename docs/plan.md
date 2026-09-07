@@ -2,7 +2,7 @@
 
 > 状态：持续实施中，尚未达到发布门禁
 >
-> 更新日期：2026-09-04
+> 更新日期：2026-09-07
 >
 > 当前目录：`/Volumes/WorkSSD/Projects/github-my/measure-trail`（已于 Phase 0 完成目录改名）
 >
@@ -15,8 +15,8 @@
 - 仓库形态：一个 monorepo，明确区分 `backend/`、`ios/`、`web/`。
 - iOS：仅支持 iOS 26，使用 SwiftUI、Swift Charts、SwiftData、HealthKit 和原生 Liquid Glass。
 - 后端：参考 `ydfk/go-fiber-starter`，使用 Fiber v3、Huma、GORM、OpenAPI；当前正式数据库使用 SQLite。
-- 部署：单实例 Docker Compose，SQLite 放入持久化卷。
-- 账号：开放注册；邮箱密码、邮箱验证、忘记密码、重置密码、通过 Apple 登录；两种身份可绑定同一账号。
+- 部署：单实例 Docker Compose，SQLite 放入持久化卷；运行容器仅启动 Go，由 Go 同时提供 API 和未来 Vue/React 静态产物。
+- 账号：暂不开放注册；用户名密码为主要凭证，首次启动创建可由环境变量覆盖的默认账号；已绑定身份可通过 Apple 登录。用户名和密码未来可在 Web 修改。
 - 数据权威：服务端 SQLite 是跨端权威数据源；iOS SwiftData 只是离线缓存和待同步队列。
 - 记录字段：日期、体重、可选腰围、可选备注；用户资料保存身高、目标体重和首选单位；BMI 动态计算。
 - 分析：当前值、较上次变化、7/30/90 天变化、目标进度、周/月平均和连续记录天数。
@@ -63,7 +63,7 @@ SHA-256：`e3b64b17c2ced4e2fa95ec3c81f4ea2b0bc3a427d47ddf26f7853a3998440c32`
 
 1. 完整品牌资产和 iOS 26 App Icon。
 2. Docker 可部署的 Go + SQLite 后端。
-3. 邮箱密码与通过 Apple 登录的完整账号生命周期。
+3. 默认账号、用户名密码登录与修改、会话管理，以及已绑定身份的 Apple 登录。
 4. 用户资料、目标、单位设置。
 5. 体重/腰围/备注的新增、覆盖、编辑、删除、历史与统计。
 6. iOS 登录、离线查看、离线录入、恢复联网同步与冲突处理。
@@ -74,7 +74,7 @@ SHA-256：`e3b64b17c2ced4e2fa95ec3c81f4ea2b0bc3a427d47ddf26f7853a3998440c32`
 
 ### 3.2 明确不做
 
-- 不实现 Web 页面，只保留契约、目录和范围说明。
+- 不实现 Web 业务页面；保留可直接接入 Vue/React 构建产物的 Docker 与 Go 静态托管边界。
 - 不实现 CSV 导入、饮食、运动、照片、AI 建议、社区或订阅。
 - 不实现每日提醒、Widget、Watch App 或智能体脂秤蓝牙连接。
 - 不把 BMI 或趋势包装成诊断、治疗或医疗建议。
@@ -86,10 +86,9 @@ SHA-256：`e3b64b17c2ced4e2fa95ec3c81f4ea2b0bc3a427d47ddf26f7853a3998440c32`
 ```mermaid
 flowchart LR
     IOS[iOS 26 SwiftUI] -->|HTTPS / OpenAPI| API[Go Fiber + Huma]
-    WEB[未来 Web] -.->|同一 API 契约| API
+    WEB[未来 Vue / React 静态产物] -->|同一 Go 进程提供| API
     ANDROID[未来 Android] -.->|同一 API 契约| API
     API --> DB[(SQLite / Docker Volume)]
-    API --> SMTP[SMTP 邮件服务]
     API --> APPLE[Apple 登录服务]
     IOS <--> HK[HealthKit]
     IOS --> CACHE[(SwiftData 缓存 + Outbox)]
@@ -206,9 +205,9 @@ measure-trail/
 
 - Module 改为最终仓库路径，不保留 `go-fiber-starter`。
 - 统一应用、Dockerfile 和 Compose 的监听端口，消除模板当前 `21000/25610` 不一致。
-- 把用户名+bcrypt+7 天单 JWT 改为邮箱身份、Argon2id、短期 Access Token 和可撤销 Refresh Token。
+- 把 bcrypt+7 天单 JWT 改为用户名身份、Argon2id、短期 Access Token 和可撤销 Refresh Token。
 - 不依赖 `AutoMigrate` 隐式变更生产表；增加有版本、可回滚评估的 SQL migration runner。
-- 增加业务 API、邮件、Apple 登录、账号删除、旧库迁移和备份能力。
+- 增加业务 API、Apple 登录、账号删除、旧库迁移、静态站点托管和备份能力。
 - 保留 Huma 的 RFC 7807 Problem 错误与 OpenAPI 输出。
 
 ### 7.2 SQLite 生产约束
@@ -216,7 +215,7 @@ measure-trail/
 - SQLite 文件：`/app/data/measuretrail.sqlite`，挂载 Docker named volume。
 - 启动时设置 `foreign_keys=ON`、`journal_mode=WAL`、`synchronous=NORMAL`、`busy_timeout`。
 - 单个后端实例；Compose 不配置副本，不在网络文件系统上共享数据库文件。
-- 对关键复合写操作使用事务；账号删除、旧库导入和刷新令牌轮换必须原子完成。生产配置在启动前校验 HTTPS 公网/CORS/Apple 端点、JWT、SMTP、Apple P-256 私钥和凭据加密密钥。
+- 对关键复合写操作使用事务；凭证修改、账号删除、旧库导入和刷新令牌轮换必须原子完成。生产配置在启动前校验 HTTPS 公网/CORS/Apple 端点、默认凭证、JWT、Apple P-256 私钥和凭据加密密钥。
 - 健康检查区分进程存活与数据库可写。
 - 备份使用 SQLite online backup/应用 CLI，不直接复制正在写入的主文件而忽略 WAL。
 - 备份产物写入 `backups/` 或独立挂载，并提供恢复演练脚本和校验报告。
@@ -226,11 +225,11 @@ measure-trail/
 
 | 表 | 关键字段/约束 |
 | --- | --- |
-| `users` | UUID、规范化邮箱唯一索引、状态、验证时间、创建/更新时间 |
+| `users` | UUID、大小写不敏感的唯一用户名、兼容历史数据的内部邮箱字段、状态、创建/更新时间 |
 | `auth_identities` | `user_id`、provider(`password`,`apple`)、provider subject；Apple subject 唯一 |
 | `password_credentials` | `user_id` 唯一、Argon2id PHC hash、更新时间 |
 | `refresh_tokens` | token hash、用户、到期、撤销、替换链、设备摘要 |
-| `email_tokens` | purpose、token hash、到期、已使用时间；明文 token 不入库 |
+| `service_metadata` | 默认账号稳定 ID 等服务级元数据 |
 | `profiles` | 用户唯一、`height_mm`、`target_weight_g`、`preferred_unit`、timezone |
 | `measurements` | UUID、用户、日期、`weight_g`、可选 `waist_mm`/note、source、HealthKit UUID、version、软删除时间 |
 | `legacy_imports` | 源 SHA-256、目标用户、统计、状态、报告、完成时间 |
@@ -246,13 +245,12 @@ measure-trail/
 
 ### 7.4 认证与安全
 
-- 邮箱注册后必须验证才能完成正常登录；重复邮箱返回不泄露账户细节的稳定错误。
-- 密码使用 Argon2id，参数写入 PHC 字符串；测试覆盖错误密码和参数升级。
+- 不提供公开注册、邮箱验证或邮箱找回端点；未知 Apple 身份不能自动开户。
+- 首次启动创建默认 `admin` / `111111`，允许环境变量覆盖；创建后凭证修改不被重启覆盖。
+- 密码使用 Argon2id，参数写入 PHC 字符串；当前兼容 6 至 128 个字符，测试覆盖错误密码和凭证修改。
 - Access Token 建议 15 分钟；Refresh Token 建议 30 天，轮换、哈希存储、可按设备撤销。
 - JWT 固定允许算法并验证 issuer、audience、expiration、not-before 和 token id。
 - Key/secret 仅通过被忽略的本机配置或 Docker secret/环境注入，仓库只提交 example。
-- 验证邮件 token 24 小时有效；重置密码 token 30 分钟有效；单次使用。
-- Mailer 抽象支持 `log`（仅开发）和 SMTP；生产环境禁止 `log` 模式。
 - 认证端点加入单实例内存限流、统一错误和安全审计日志；日志不得包含密码、token、完整健康记录或备注。
 - Apple 登录由服务器验证 identity token、authorization code、nonce、issuer、audience，并保存撤销所需凭证。
 - 账号删除时删除业务数据和服务端令牌，并撤销通过 Apple 登录的 token；iOS 同时清理 Keychain、全部 SwiftData 缓存、HealthKit 锚点和手工写入偏好。退出也复用相同本机清理流程，避免切换账号暴露前一账号数据。
@@ -263,20 +261,17 @@ measure-trail/
 
 认证：
 
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/verify-email`
-- `POST /api/v1/auth/resend-verification`
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/apple`
 - `POST /api/v1/auth/refresh`
 - `POST /api/v1/auth/logout`
-- `POST /api/v1/auth/forgot-password`
-- `POST /api/v1/auth/reset-password`
 - `GET /api/v1/auth/sessions`
 - `DELETE /api/v1/auth/sessions/{id}`
 
 资料与账号：
 
+- `GET /api/v1/account/credentials`
+- `PATCH /api/v1/account/credentials`
 - `GET /api/v1/profile`
 - `PATCH /api/v1/profile`
 - `GET /api/v1/account/export.csv`
@@ -310,7 +305,7 @@ measure-trail/
 ```text
 measuretrail migrate legacy-slimtrack \
   --source /path/to/slimtrack.db \
-  --owner-email user@example.com \
+  --owner-username admin \
   --dry-run \
   --report /path/to/report.json
 ```
@@ -332,7 +327,7 @@ measuretrail migrate legacy-slimtrack \
 
 ### 8.3 安全与验收
 
-- 正式导入前目标账号必须存在且完成邮箱验证。
+- 正式导入前目标用户名必须存在；省略 `--owner-username` 时使用服务记录的默认账号。
 - 先校验源 SHA-256、表结构、索引、47 条记录、日期范围和所有数值。
 - 默认冲突策略为 `abort`；目标账号已存在相同日期时整次回滚，不默认覆盖。
 - 整批在一个事务内完成，写入 `legacy_imports`；相同 SHA + 用户重复执行返回“已导入”而非重复插入。
@@ -358,7 +353,7 @@ measuretrail migrate legacy-slimtrack \
 认证与引导：
 
 - 欢迎页解释为什么跨设备同步需要账号。
-- 邮箱登录/注册、验证码/验证链接状态、忘记密码、通过 Apple 登录。
+- 用户名密码登录；不显示注册、邮箱或找回密码入口；已绑定身份可通过 Apple 登录。
 - 首次设置选择单位、身高、目标体重；HealthKit 在解释用途后单独请求，不与登录捆绑。
 
 记录：
@@ -404,13 +399,13 @@ measuretrail migrate legacy-slimtrack \
 
 ## 10. Docker 与运行配置
 
-`docker-compose.yml` 第一版仅包含后端服务，不包含 PostgreSQL：
+`docker-compose.yml` 第一版仅包含一个 Go 服务，不包含 PostgreSQL 或独立 Web 服务器：
 
-- 镜像使用多阶段构建并以非 root 用户运行。
-- 固定一个对外端口，默认 `21000`；部署 URL、CORS、邮件、Apple、JWT 和数据库路径均环境驱动。
+- 镜像使用 Node 前端构建阶段、Go 编译阶段和最小运行阶段，并以非 root 用户运行；运行阶段不包含 Node/Nginx/Caddy。
+- 固定一个对外端口，默认 `21000`；部署 URL、CORS、静态目录、默认账号、Apple、JWT 和数据库路径均环境驱动。
 - `/app/data`、`/app/log` 使用持久化卷；配置文件可读挂载。
 - Healthcheck 调用 `/api/health`。
-- Compose 启动前检查 JWT secret、Apple secret、SMTP 和数据库目录权限。
+- Compose 启动前检查 JWT secret、默认账号、Apple secret 和数据库目录权限。
 - `restart: unless-stopped`，不使用多个 replica。
 - 提供 `docker compose` 的启动、日志、备份、恢复、升级和回滚步骤。
 
@@ -420,8 +415,8 @@ measuretrail migrate legacy-slimtrack \
 
 ### 11.1 后端
 
-- 单元测试：单位换算、BMI/统计、邮箱规范化、密码、token、日期和校验。
-- API 测试：注册、验证、登录、Apple provider mock、刷新轮换、退出、重置密码、资料、CRUD、统计、导出、删号。
+- 单元测试：单位换算、BMI/统计、用户名规范化、密码、token、日期和校验。
+- API 测试：默认账号、用户名登录与凭证修改、Apple provider mock、刷新轮换、退出、资料、CRUD、统计、导出、删号。
 - 权限测试：用户 A 永远不能读取/更新/删除用户 B 数据。
 - 并发测试：同用户同日期并发 upsert（已覆盖重复写入与 SQLite busy 重试）、刷新 token 重放、SQLite busy 场景。
 - 迁移测试：dry-run、真实结构 fixture、重复 SHA、目标冲突、事务回滚和 47 条基线核对。
@@ -432,7 +427,7 @@ measuretrail migrate legacy-slimtrack \
 
 - 单元测试：单位转换、表单验证、统计展示、冲突策略、HealthKit 映射、Outbox 重试。
 - API contract 测试：生成客户端能编译并解码后端 fixture。
-- UI 测试：邮箱/Apple 登录入口、首次引导、记录、同日更新、历史编辑删除、离线状态、导出和删号。
+- UI 测试：用户名/Apple 登录入口、首次引导、记录、同日更新、历史编辑删除、离线状态、导出和删号。
 - 无障碍测试：VoiceOver 标签、动态字体、Reduce Motion、Reduce Transparency 和颜色对比。
 - 截图/视觉检查：浅色、深色、空状态、错误状态、长备注、稀疏腰围数据。
 - 模拟器验证不能替代真机 HealthKit 和真实 Sign in with Apple；这两项必须单独列为真机验收。
@@ -441,9 +436,9 @@ measuretrail migrate legacy-slimtrack \
 ### 11.3 Docker 与发布
 
 - Compose 全新启动、重启、镜像升级、卷保留、备份与恢复。
-- 实际 HTTPS 环境验证注册邮件、Apple 回调、刷新和账号删除。
+- 实际 HTTPS 环境验证默认账号、Apple 回调、刷新、凭证修改和账号删除。
 - App Store 审核前准备可用审核账号或完整演示路径，后端审核期间保持在线。
-- 因 App 支持建号，必须在 App 内提供完整账号删除；Apple 登录账号删除时同时撤销 Apple token。
+- App 内保留完整账号删除；Apple 登录账号删除时同时撤销 Apple token。
 
 ## 12. 分阶段执行顺序
 
@@ -476,8 +471,8 @@ measuretrail migrate legacy-slimtrack \
 
 ### Phase 3：账号系统
 
-- 实现邮箱验证/重置、Argon2id、Access/Refresh、会话撤销和 Apple 登录。
-- 实现邮件适配、Apple server-to-server 相关端点和账号删除基础。
+- 实现默认账号、用户名密码、Argon2id、Access/Refresh、会话撤销和 Apple 登录。
+- 实现凭证修改、Apple server-to-server 相关端点和账号删除基础。
 - 完成认证安全与隔离测试。
 
 验收：完整认证 API 和 OpenAPI；token 轮换/重放/删号测试通过。
@@ -488,12 +483,12 @@ measuretrail migrate legacy-slimtrack \
 - 实现 optimistic concurrency、tombstone 和 cursor 增量同步。
 - 实现旧库 dry-run/正式导入 CLI，并对当前 47 条数据生成报告。
 
-门禁：正式导入前由用户提供目标账号邮箱并确认 dry-run 报告。
+门禁：正式导入前由用户确认 dry-run 报告；未指定其他用户名时导入默认账号。
 
 ### Phase 5：iOS 壳、认证与设计系统
 
 - 创建 iOS 26 Xcode 项目、品牌 token、App Icon、生成式 API Client、Keychain 和 App 状态机。
-- 完成认证、验证、重置、Apple 登录、首次引导和退出。
+- 完成用户名密码、Apple 登录、首次引导和退出。
 
 验收：模拟器登录主路径和 UI 测试通过；真实 Apple 登录列为真机验收。
 
@@ -513,17 +508,17 @@ measuretrail migrate legacy-slimtrack \
 
 ### Phase 8：部署与发布准备
 
-- 完成生产 Compose、配置校验、HTTPS 部署文档、SMTP/Apple 配置、备份恢复和升级流程。
+- 完成生产 Compose、Go 静态站点托管、配置校验、HTTPS 部署文档、Apple 配置、备份恢复和升级流程。
 - 完成隐私文档、App Store 清单、审核账号/说明和真机验收。
 
-验收：Docker 重建不丢数据、备份可恢复、真实邮件和 Apple 登录可用、App Store 所需删号路径完整。
+验收：Docker 重建不丢数据、备份可恢复、Go 可提供前端静态文件、真实 Apple 登录可用、App Store 所需删号路径完整。
 
 ## 13. 实施时的工作规则
 
 1. 每个 Phase 开始前重新阅读本计划，只实施当前 Phase。
 2. 修改前报告本 Phase 范围、目标文件和技术决策；不偷跑未来 Phase。
 3. 有远程仓库时，任何修改前先拉取并确认工作树；保留用户已有改动。
-4. 不提交真实数据库、密钥、邮件凭证、Apple 私钥、token、健康记录或备注。
+4. 不提交真实数据库、密钥、默认账号生产密码、Apple 私钥、token、健康记录或备注。
 5. API/数据库/客户端变更必须同时更新契约和测试。
 6. 每个 Phase 单独验证并报告“已验证”与“仍需真机/外部环境验证”。
 7. 未经用户明确授权，不提交、不推送、不发布、不删除旧数据库。
@@ -533,7 +528,7 @@ measuretrail migrate legacy-slimtrack \
 只有以下条件全部满足，第一版才算完成：
 
 - 用户选定并验收量迹 Logo。
-- Go/SQLite/Docker、邮箱/Apple 认证、记录、统计、同步、导出、删号均完成并有测试。
+- Go/SQLite/Docker、用户名/Apple 认证、记录、统计、同步、导出、删号均完成并有测试。
 - 当前旧库 47 条记录通过 dry-run 和用户确认后成功导入指定账号，核对报告一致。
 - iOS 26 真机完成 HealthKit 与 Sign in with Apple 验证。
 - 离线录入、恢复网络、跨设备冲突和服务器重启均不丢数据。

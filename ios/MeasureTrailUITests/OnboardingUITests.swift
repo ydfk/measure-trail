@@ -12,7 +12,7 @@ final class OnboardingUITests: XCTestCase {
 
         app.buttons["继续"].tap()
 
-        XCTAssertTrue(app.textFields["authentication-email"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["authentication-username"].waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -26,19 +26,16 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertFalse(app.buttons["注册"].exists)
         XCTAssertFalse(app.segmentedControls["账号操作"].exists)
         XCTAssertFalse(app.buttons["设置量迹服务器"].exists)
+        XCTAssertFalse(app.buttons["忘记密码？"].exists)
+        XCTAssertFalse(app.staticTexts["邮箱"].exists)
         XCTAssertTrue(app.buttons["authentication-submit"].isHittable)
         XCTAssertFalse(app.buttons["authentication-submit"].isEnabled)
 
-        let email = app.textFields["authentication-email"]
-        email.tap()
-        email.typeText("existing@example.com")
+        let username = app.textFields["authentication-username"]
+        XCTAssertEqual(username.value as? String, "admin")
         let password = app.secureTextFields["authentication-password"]
         password.tap()
-        password.typeText("correct-horse-battery-staple")
+        password.typeText("111111")
         XCTAssertTrue(app.buttons["authentication-submit"].isEnabled)
-
-        app.swipeUp()
-        app.buttons["忘记密码？"].tap()
-        XCTAssertTrue(app.navigationBars["重置密码"].waitForExistence(timeout: 5))
     }
 }

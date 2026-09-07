@@ -15,32 +15,36 @@ import (
 )
 
 type ImportOptions struct {
-	SourcePath string
-	OwnerEmail string
-	DryRun     bool
+	SourcePath    string
+	OwnerUsername string
+	DryRun        bool
 }
 
 func Import(target *gorm.DB, options ImportOptions) (Report, error) {
 	report, err := Inspect(options.SourcePath)
-	if err != nil || options.DryRun {
+	if err != nil {
 		return report, err
-	}
-	if strings.TrimSpace(options.OwnerEmail) == "" {
-		return Report{}, fmt.Errorf("必须提供目标账号邮箱")
 	}
 	records, err := loadRecords(options.SourcePath)
 	if err != nil {
-		return Report{}, err
+		return report, err
+	}
+	if options.DryRun {
+		return report, nil
 	}
 	now := time.Now().UTC()
 	err = target.Transaction(func(tx *gorm.DB) error {
 		var userID string
-		var verifiedAt sql.NullString
-		if err := tx.Raw("SELECT id, email_verified_at FROM users WHERE email = ? AND status = 'active'", strings.ToLower(strings.TrimSpace(options.OwnerEmail))).Row().Scan(&userID, &verifiedAt); err != nil {
-			return fmt.Errorf("目标账号不存在")
+		var ownerQuery *gorm.DB
+		if username := strings.TrimSpace(options.OwnerUsername); username != "" {
+			ownerQuery = tx.Raw("SELECT id FROM users WHERE username = ? COLLATE NOCASE AND status = 'active'", strings.ToLower(username))
+		} else {
+			ownerQuery = tx.Raw(`SELECT users.id FROM users
+				JOIN service_metadata ON service_metadata.value = users.id
+				WHERE service_metadata.key = 'default_user_id' AND users.status = 'active'`)
 		}
-		if !verifiedAt.Valid {
-			return fmt.Errorf("目标账号尚未验证邮箱")
+		if err := ownerQuery.Row().Scan(&userID); err != nil {
+			return fmt.Errorf("目标账号不存在")
 		}
 		var count int
 		if err := tx.Raw("SELECT COUNT(*) FROM legacy_imports WHERE user_id = ? AND source_sha256 = ?", userID, report.SourceSHA256).Row().Scan(&count); err != nil {
@@ -118,7 +122,7 @@ func loadRecords(sourcePath string) ([]legacyRecord, error) {
 			return nil, fmt.Errorf("旧库公斤字段无效")
 		}
 		jinCentigrams, err := decimalUnits(jin, 100)
-		if err != nil || jinCentigrams != weightCentigrams*2 {
+		if err != nil || !weightsAreConsistent(weightCentigrams, jinCentigrams) {
 			return nil, fmt.Errorf("旧库斤公斤字段不一致")
 		}
 		var waistMM *int
@@ -140,6 +144,15 @@ func loadRecords(sourcePath string) ([]legacyRecord, error) {
 		records = append(records, legacyRecord{RecordedOn: date, WeightG: weightG, WaistMM: waistMM, Note: strings.TrimSpace(note.String), CreatedAt: createdAt, UpdatedAt: updatedAt})
 	}
 	return records, rows.Err()
+}
+
+func weightsAreConsistent(weightCentigrams int, jinCentigrams int) bool {
+	// 旧客户端将公斤和斤都保留两位小数，二次换算最多会产生 0.01 斤的舍入差。
+	difference := jinCentigrams - weightCentigrams*2
+	if difference < 0 {
+		difference = -difference
+	}
+	return difference <= 1
 }
 
 func decimalUnits(value string, multiplier int64) (int, error) {

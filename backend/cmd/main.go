@@ -27,11 +27,10 @@ func main() {
 			log.Fatal(err)
 		}
 	}
-	notifier, err := auth.NewNotifier(appConfig.Mail, appConfig.App.PublicBaseURL)
-	if err != nil {
+	if err := authService.EnsureDefaultUser(appConfig.Auth.DefaultUsername, appConfig.Auth.DefaultPassword); err != nil {
 		log.Fatal(err)
 	}
-	app := server.New(appConfig, db, authService, notifier, auth.NewAppleVerifier(appConfig.Apple))
-	log.Printf("MeasureTrail API 正在监听 :%s", appConfig.App.Port)
+	app := server.New(appConfig, db, authService, auth.NewAppleVerifier(appConfig.Apple))
+	log.Printf("MeasureTrail 正在监听 :%s", appConfig.App.Port)
 	log.Fatal(app.Listen(":" + appConfig.App.Port))
 }

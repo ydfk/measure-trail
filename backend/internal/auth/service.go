@@ -15,9 +15,11 @@ import (
 
 var (
 	ErrRegistrationClosed = errors.New("暂未开放注册，请使用已有账号登录")
-	ErrInvalidCredentials = errors.New("邮箱或密码不正确")
+	ErrInvalidCredentials = errors.New("用户名或密码不正确")
 	ErrEmailNotVerified   = errors.New("邮箱尚未验证")
 	ErrInvalidToken       = errors.New("token 无效或已过期")
+	ErrUsernameTaken      = errors.New("用户名已被使用")
+	ErrNoCredentialChange = errors.New("未提供新的用户名或密码")
 )
 
 type Service struct {
@@ -58,6 +60,53 @@ func NewService(db *gorm.DB, authConfig config.Auth) (*Service, error) {
 	return &Service{db: db, tokens: tokens, now: time.Now, registrationEnabled: authConfig.RegistrationEnabled}, nil
 }
 
+func (service *Service) EnsureDefaultUser(username string, password string) error {
+	username = normalizeUsername(username)
+	if !usernameIsValid(username) || !passwordIsValid(password) {
+		return fmt.Errorf("默认用户名或密码不符合要求")
+	}
+	var configuredUserID string
+	err := service.db.Raw(`SELECT users.id FROM service_metadata
+		JOIN users ON users.id = service_metadata.value
+		WHERE service_metadata.key = 'default_user_id' AND users.status = 'active'`).Row().Scan(&configuredUserID)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	var existingID string
+	err = service.db.Raw("SELECT id FROM users WHERE username = ? COLLATE NOCASE AND status = 'active'", username).Row().Scan(&existingID)
+	if err == nil {
+		return service.db.Exec("INSERT OR REPLACE INTO service_metadata(key, value) VALUES ('default_user_id', ?)", existingID).Error
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	passwordHash, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
+	userID := uuid.NewString()
+	now := service.now().UTC()
+	return service.db.Transaction(func(tx *gorm.DB) error {
+		placeholderEmail := username + "@local.invalid"
+		if err := tx.Exec("INSERT INTO users(id, email, email_verified_at, username, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", userID, placeholderEmail, now, username, now, now).Error; err != nil {
+			if strings.Contains(err.Error(), "users_username_unique_idx") || strings.Contains(err.Error(), "users.username") {
+				return nil
+			}
+			return err
+		}
+		if err := tx.Exec("INSERT INTO password_credentials(user_id, password_hash, updated_at) VALUES (?, ?, ?)", userID, passwordHash, now).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("INSERT INTO auth_identities(id, user_id, provider, provider_subject, created_at) VALUES (?, ?, 'password', ?, ?)", uuid.NewString(), userID, username, now).Error; err != nil {
+			return err
+		}
+		return tx.Exec("INSERT OR REPLACE INTO service_metadata(key, value) VALUES ('default_user_id', ?)", userID).Error
+	})
+}
+
 func (service *Service) Register(email string, password string) (string, error) {
 	if !service.registrationEnabled {
 		return "", ErrRegistrationClosed
@@ -77,7 +126,8 @@ func (service *Service) Register(email string, password string) (string, error) 
 	now := service.now().UTC()
 	err = service.db.Transaction(func(tx *gorm.DB) error {
 		userID := uuid.NewString()
-		if err := tx.Exec("INSERT INTO users(id, email, created_at, updated_at) VALUES (?, ?, ?, ?)", userID, email, now, now).Error; err != nil {
+		username := "user_" + strings.ReplaceAll(userID, "-", "")[:12]
+		if err := tx.Exec("INSERT INTO users(id, email, username, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", userID, email, username, now, now).Error; err != nil {
 			return fmt.Errorf("创建账号: %w", err)
 		}
 		if err := tx.Exec("INSERT INTO password_credentials(user_id, password_hash, updated_at) VALUES (?, ?, ?)", userID, hash, now).Error; err != nil {
@@ -127,17 +177,13 @@ func (service *Service) ResetPassword(rawToken string, password string) error {
 	})
 }
 
-func (service *Service) Login(email string, password string, deviceLabel string) (Session, error) {
+func (service *Service) Login(username string, password string, deviceLabel string) (Session, error) {
 	var userID, passwordHash string
-	var verifiedAt sql.NullString
-	err := service.db.Raw(`SELECT users.id, users.email_verified_at, password_credentials.password_hash
+	err := service.db.Raw(`SELECT users.id, password_credentials.password_hash
 		FROM users JOIN password_credentials ON password_credentials.user_id = users.id
-		WHERE users.email = ? AND users.status = 'active'`, normalizeEmail(email)).Row().Scan(&userID, &verifiedAt, &passwordHash)
+		WHERE (users.username = ? COLLATE NOCASE OR users.email = ? COLLATE NOCASE) AND users.status = 'active'`, normalizeUsername(username), normalizeEmail(username)).Row().Scan(&userID, &passwordHash)
 	if err != nil || !verifyPassword(passwordHash, password) {
 		return Session{}, ErrInvalidCredentials
-	}
-	if !verifiedAt.Valid {
-		return Session{}, ErrEmailNotVerified
 	}
 	return service.issueSession(userID, deviceLabel)
 }
@@ -179,7 +225,8 @@ func (service *Service) SignInWithApple(ctx context.Context, verifier AppleVerif
 	userID = uuid.NewString()
 	now := service.now().UTC()
 	err = service.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("INSERT INTO users(id, email, email_verified_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", userID, identity.Email, now, now, now).Error; err != nil {
+		username := "apple_" + strings.ReplaceAll(userID, "-", "")[:12]
+		if err := tx.Exec("INSERT INTO users(id, email, email_verified_at, username, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", userID, identity.Email, now, username, now, now).Error; err != nil {
 			return err
 		}
 		if err := tx.Exec("INSERT INTO auth_identities(id, user_id, provider, provider_subject, created_at) VALUES (?, ?, 'apple', ?, ?)", uuid.NewString(), userID, identity.Subject, now).Error; err != nil {
@@ -244,6 +291,61 @@ func (service *Service) emailExists(email string) bool {
 	var count int64
 	service.db.Raw("SELECT COUNT(*) FROM users WHERE email = ? AND status = 'active'", email).Scan(&count)
 	return count > 0
+}
+
+func (service *Service) Username(userID string) (string, error) {
+	var username string
+	err := service.db.Raw("SELECT username FROM users WHERE id = ? AND status = 'active'", userID).Row().Scan(&username)
+	if err != nil {
+		return "", ErrInvalidToken
+	}
+	return username, nil
+}
+
+func (service *Service) UpdateCredentials(userID string, currentPassword string, newUsername string, newPassword string) error {
+	newUsername = normalizeUsername(newUsername)
+	if newUsername == "" && newPassword == "" {
+		return ErrNoCredentialChange
+	}
+	if newUsername != "" && !usernameIsValid(newUsername) {
+		return fmt.Errorf("用户名必须为 3 至 32 个字母、数字、点、下划线或连字符")
+	}
+	if newPassword != "" && !passwordIsValid(newPassword) {
+		return fmt.Errorf("密码必须为 6 至 128 个字符")
+	}
+	var passwordHash string
+	if err := service.db.Raw("SELECT password_hash FROM password_credentials WHERE user_id = ?", userID).Row().Scan(&passwordHash); err != nil || !verifyPassword(passwordHash, currentPassword) {
+		return ErrInvalidCredentials
+	}
+	var newPasswordHash string
+	var err error
+	if newPassword != "" {
+		newPasswordHash, err = hashPassword(newPassword)
+		if err != nil {
+			return err
+		}
+	}
+	now := service.now().UTC()
+	err = service.db.Transaction(func(tx *gorm.DB) error {
+		if newUsername != "" {
+			if err := tx.Exec("UPDATE users SET username = ?, updated_at = ? WHERE id = ? AND status = 'active'", newUsername, now, userID).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("UPDATE auth_identities SET provider_subject = ? WHERE user_id = ? AND provider = 'password'", newUsername, userID).Error; err != nil {
+				return err
+			}
+		}
+		if newPasswordHash != "" {
+			if err := tx.Exec("UPDATE password_credentials SET password_hash = ?, updated_at = ? WHERE user_id = ?", newPasswordHash, now, userID).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Exec("UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", now, userID).Error
+	})
+	if err != nil && (strings.Contains(err.Error(), "users_username_unique_idx") || strings.Contains(err.Error(), "users.username")) {
+		return ErrUsernameTaken
+	}
+	return err
 }
 
 func (service *Service) NewAppleNonce() (string, error) {

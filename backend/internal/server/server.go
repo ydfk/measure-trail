@@ -2,6 +2,8 @@ package server
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func New(config config.Config, db *gorm.DB, authService *auth.Service, notifier auth.Notifier, appleVerifier auth.AppleVerifier) *fiber.App {
+func New(config config.Config, db *gorm.DB, authService *auth.Service, appleVerifier auth.AppleVerifier) *fiber.App {
 	corsOrigins := config.App.CORSOrigins
 	if len(corsOrigins) == 0 {
 		corsOrigins = []string{config.App.PublicBaseURL}
@@ -50,14 +52,46 @@ func New(config config.Config, db *gorm.DB, authService *auth.Service, notifier 
 	humaConfig.SchemasPath = ""
 	api := humafiber.New(app, humaConfig)
 	health.Register(api, db)
-	if authService != nil && notifier != nil {
+	if authService != nil {
 		if appleVerifier == nil {
 			appleVerifier = auth.NewAppleVerifier(config.Apple)
 		}
-		auth.RegisterRoutes(api, authService, notifier, appleVerifier, auth.NewAppleTokenClient(config.Apple))
+		auth.RegisterRoutes(api, authService, appleVerifier, auth.NewAppleTokenClient(config.Apple))
 		tracking.RegisterRoutes(api, tracking.NewService(db), authService)
 	}
+	registerWebRoutes(app, config.App.WebRoot)
 	return app
+}
+
+func registerWebRoutes(app *fiber.App, webRoot string) {
+	webRoot = strings.TrimSpace(webRoot)
+	if webRoot == "" {
+		return
+	}
+	root, err := filepath.Abs(webRoot)
+	if err != nil {
+		return
+	}
+	indexPath := filepath.Join(root, "index.html")
+	if info, err := os.Stat(indexPath); err != nil || !info.Mode().IsRegular() {
+		return
+	}
+	app.All("/api/*", func(ctx fiber.Ctx) error {
+		return fiber.ErrNotFound
+	})
+	app.Get("/*", func(ctx fiber.Ctx) error {
+		requestPath := ctx.Path()
+		if strings.HasPrefix(requestPath, "/api/") || requestPath == "/openapi.json" {
+			return fiber.ErrNotFound
+		}
+		assetPath := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(requestPath, "/")))
+		if relative, err := filepath.Rel(root, assetPath); err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			if info, err := os.Stat(assetPath); err == nil && info.Mode().IsRegular() {
+				return ctx.SendFile(assetPath)
+			}
+		}
+		return ctx.SendFile(indexPath)
+	})
 }
 
 func problemHandler(ctx fiber.Ctx, err error) error {

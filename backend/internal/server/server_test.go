@@ -1,11 +1,11 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,7 +33,7 @@ func TestHealthRouteAndOpenAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建认证服务: %v", err)
 	}
-	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, authService, &recordingNotifier{}, nil)
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, authService, nil)
 
 	healthResponse, err := app.Test(httptest.NewRequest("GET", "/api/health", nil))
 	if err != nil {
@@ -86,7 +86,7 @@ func TestCORSPreflightAllowsMeasurementUpsert(t *testing.T) {
 	}
 	publicURL := "https://api.measuretrail.example.com"
 	webOrigin := "https://web.measuretrail.example.com"
-	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: publicURL, CORSOrigins: []string{webOrigin}}}, db, nil, nil, nil)
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: publicURL, CORSOrigins: []string{webOrigin}}}, db, nil, nil)
 	request := httptest.NewRequest(http.MethodOptions, "/api/v1/measurements/by-date/2025-09-26", nil)
 	request.Header.Set("Origin", webOrigin)
 	request.Header.Set("Access-Control-Request-Method", http.MethodPut)
@@ -122,25 +122,14 @@ func TestAuthenticationRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建认证服务: %v", err)
 	}
-	notifier := &recordingNotifier{}
-	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, notifier, auth.NewAppleVerifier(config.Apple{}))
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, auth.NewAppleVerifier(config.Apple{}))
 
-	register := request(t, app, http.MethodPost, "/api/v1/auth/register", `{"email":"route@example.com","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
-	if register.StatusCode != http.StatusNoContent {
-		t.Fatalf("注册 status = %d, body = %s", register.StatusCode, readBody(t, register))
-	}
-	register.Body.Close()
-	if notifier.verificationEmail != "route@example.com" || notifier.verificationToken == "" {
-		t.Fatalf("验证邮件记录 = %#v", notifier)
+	verification, err := service.Register("route@example.com", "correct-horse-battery-staple")
+	if err != nil || service.VerifyEmail(verification) != nil {
+		t.Fatalf("准备测试账号: %v", err)
 	}
 
-	verify := request(t, app, http.MethodPost, "/api/v1/auth/verify-email", `{"token":"`+notifier.verificationToken+`"}`)
-	if verify.StatusCode != http.StatusNoContent {
-		t.Fatalf("验证 status = %d, body = %s", verify.StatusCode, readBody(t, verify))
-	}
-	verify.Body.Close()
-
-	login := request(t, app, http.MethodPost, "/api/v1/auth/login", `{"email":"route@example.com","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
+	login := request(t, app, http.MethodPost, "/api/v1/auth/login", `{"username":"route@example.com","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
 	defer login.Body.Close()
 	if login.StatusCode != http.StatusOK {
 		t.Fatalf("登录 status = %d, body = %s", login.StatusCode, readBody(t, login))
@@ -171,26 +160,26 @@ func TestAuthenticationRoutesRateLimitedByPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建认证服务: %v", err)
 	}
-	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, &recordingNotifier{}, nil)
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, nil)
 
 	for attempt := 0; attempt < 10; attempt++ {
-		response := request(t, app, http.MethodPost, "/api/v1/auth/login", `{"email":"missing@example.com","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
+		response := request(t, app, http.MethodPost, "/api/v1/auth/login", `{"username":"missing","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
 		if response.StatusCode != http.StatusUnauthorized {
 			t.Fatalf("第 %d 次登录 status=%d, body=%s", attempt+1, response.StatusCode, readBody(t, response))
 		}
 		response.Body.Close()
 	}
 
-	limited := request(t, app, http.MethodPost, "/api/v1/auth/login", `{"email":"missing@example.com","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
+	limited := request(t, app, http.MethodPost, "/api/v1/auth/login", `{"username":"missing","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
 	defer limited.Body.Close()
 	if limited.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("限流登录 status=%d, body=%s", limited.StatusCode, readBody(t, limited))
 	}
 
-	registration := request(t, app, http.MethodPost, "/api/v1/auth/register", `{"email":"new@example.com","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
+	registration := request(t, app, http.MethodPost, "/api/v1/auth/register", `{"username":"new-user","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
 	defer registration.Body.Close()
-	if registration.StatusCode != http.StatusNoContent {
-		t.Fatalf("注册不应与登录共享限流计数，status=%d, body=%s", registration.StatusCode, readBody(t, registration))
+	if registration.StatusCode != http.StatusNotFound {
+		t.Fatalf("注册路由应不存在，status=%d, body=%s", registration.StatusCode, readBody(t, registration))
 	}
 }
 
@@ -219,7 +208,7 @@ func TestTrackingRoutesRequireOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("其他用户登录: %v", err)
 	}
-	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, &recordingNotifier{}, nil)
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, nil)
 
 	requestWithAuthorization(t, app, http.MethodPut, "/api/v1/measurements/by-date/2025-09-26", `{"weightG":76120,"note":"晨起","clientMutationId":"mutation-0001"}`, owner.AccessToken, http.StatusOK)
 
@@ -269,7 +258,7 @@ func TestTrackingRoutesRejectStaleMeasurementVersionAcrossDeviceSessions(t *test
 	if err != nil {
 		t.Fatalf("第二台设备登录: %v", err)
 	}
-	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, &recordingNotifier{}, nil)
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, nil)
 
 	created := requestWithAuthorization(t, app, http.MethodPut, "/api/v1/measurements/by-date/2025-09-26", `{"weightG":76120,"clientMutationId":"mutation-create-0001"}`, firstDevice.AccessToken, http.StatusOK)
 	var firstVersion struct {
@@ -322,7 +311,7 @@ func TestHealthKitImportRouteRequiresAuthenticationAndReturnsSource(t *testing.T
 	if err != nil {
 		t.Fatalf("HealthKit 用户登录: %v", err)
 	}
-	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, &recordingNotifier{}, nil)
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, nil)
 	body := `{"recordedOn":"2025-09-26","weightG":76120,"waistMm":810,"healthkitUuid":"healthkit-sample-0001","clientMutationId":"mutation-0001"}`
 
 	unauthorized := request(t, app, http.MethodPost, "/api/v1/measurements/healthkit", body)
@@ -397,21 +386,6 @@ func readBody(t *testing.T, response *http.Response) string {
 	return string(body)
 }
 
-type recordingNotifier struct {
-	verificationEmail string
-	verificationToken string
-}
-
-func (notifier *recordingNotifier) SendVerification(_ context.Context, email string, token string) error {
-	notifier.verificationEmail = email
-	notifier.verificationToken = token
-	return nil
-}
-
-func (*recordingNotifier) SendPasswordReset(context.Context, string, string) error {
-	return nil
-}
-
 func TestRegistrationRouteClosedByDefault(t *testing.T) {
 	db, err := database.Open(config.Database{Path: filepath.Join(t.TempDir(), "measuretrail.sqlite"), BusyTimeoutMS: 1000})
 	if err != nil {
@@ -421,18 +395,132 @@ func TestRegistrationRouteClosedByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	notifier := &recordingNotifier{}
-	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, notifier, nil)
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, nil)
 	response := request(t, app, http.MethodPost, "/api/v1/auth/register", `{"email":"new@example.com","password":"correct-horse-battery-staple","deviceLabel":"iPhone"}`)
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusForbidden {
-		t.Fatalf("关闭注册 status=%d", response.StatusCode)
-	}
-	if notifier.verificationToken != "" {
-		t.Fatal("关闭注册后不应发送验证邮件")
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("注册路由 status=%d", response.StatusCode)
 	}
 	var count int64
 	if err := db.Table("users").Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("账号数=%d, error=%v", count, err)
+	}
+}
+
+func TestEmailAndRegistrationRoutesAreUnavailable(t *testing.T) {
+	db, err := database.Open(config.Database{Path: filepath.Join(t.TempDir(), "measuretrail.sqlite"), BusyTimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := auth.NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, nil)
+	for _, path := range []string{"/api/v1/auth/register", "/api/v1/auth/verify-email", "/api/v1/auth/resend-verification", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password"} {
+		response := request(t, app, http.MethodPost, path, `{}`)
+		response.Body.Close()
+		if response.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s status=%d, want 404", path, response.StatusCode)
+		}
+	}
+}
+
+func TestAccountCredentialsCanBeReadAndChanged(t *testing.T) {
+	db, err := database.Open(config.Database{Path: filepath.Join(t.TempDir(), "measuretrail.sqlite"), BusyTimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := auth.NewService(db, config.Auth{Issuer: "measuretrail", Audience: "measuretrail-ios", AccessSecret: "01234567890123456789012345678901", RefreshSecret: "abcdefghijklmnopqrstuvwxyzABCDEF"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.EnsureDefaultUser("admin", "111111"); err != nil {
+		t.Fatal(err)
+	}
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000"}}, db, service, nil)
+	login := request(t, app, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"111111","deviceLabel":"Web"}`)
+	defer login.Body.Close()
+	var session struct {
+		AccessToken  string `json:"accessToken"`
+		RefreshToken string `json:"refreshToken"`
+	}
+	if login.StatusCode != http.StatusOK || json.NewDecoder(login.Body).Decode(&session) != nil {
+		t.Fatalf("默认账号登录 status=%d", login.StatusCode)
+	}
+	credentialsRequest := httptest.NewRequest(http.MethodGet, "/api/v1/account/credentials", nil)
+	credentialsRequest.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	credentials, err := app.Test(credentialsRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer credentials.Body.Close()
+	if credentials.StatusCode != http.StatusOK || !strings.Contains(readBody(t, credentials), `"username":"admin"`) {
+		t.Fatalf("读取凭证 status=%d", credentials.StatusCode)
+	}
+	updateRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/account/credentials", strings.NewReader(`{"currentPassword":"111111","username":"owner","password":"654321"}`))
+	updateRequest.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	updateRequest.Header.Set("Content-Type", "application/json")
+	updated, err := app.Test(updateRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated.Body.Close()
+	if updated.StatusCode != http.StatusNoContent {
+		t.Fatalf("修改凭证 status=%d", updated.StatusCode)
+	}
+	oldRefresh := request(t, app, http.MethodPost, "/api/v1/auth/refresh", `{"refreshToken":"`+session.RefreshToken+`","deviceLabel":"Web"}`)
+	oldRefresh.Body.Close()
+	if oldRefresh.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("旧 refresh token status=%d", oldRefresh.StatusCode)
+	}
+	oldLogin := request(t, app, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"111111","deviceLabel":"Web"}`)
+	oldLogin.Body.Close()
+	if oldLogin.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("旧凭证 status=%d", oldLogin.StatusCode)
+	}
+	newLogin := request(t, app, http.MethodPost, "/api/v1/auth/login", `{"username":"owner","password":"654321","deviceLabel":"Web"}`)
+	newLogin.Body.Close()
+	if newLogin.StatusCode != http.StatusOK {
+		t.Fatalf("新凭证 status=%d", newLogin.StatusCode)
+	}
+}
+
+func TestGoServesStaticAssetsAndSPAFallback(t *testing.T) {
+	webRoot := t.TempDir()
+	if err := os.Mkdir(filepath.Join(webRoot, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webRoot, "index.html"), []byte("<main>MeasureTrail SPA</main>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webRoot, "assets", "app.js"), []byte("window.measureTrail=true"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(config.Database{Path: filepath.Join(t.TempDir(), "measuretrail.sqlite"), BusyTimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := New(config.Config{App: config.App{Port: "21000", PublicBaseURL: "http://localhost:21000", WebRoot: webRoot}}, db, nil, nil)
+	for path, expected := range map[string]string{"/": "MeasureTrail SPA", "/dashboard": "MeasureTrail SPA", "/assets/app.js": "window.measureTrail=true"} {
+		response, err := app.Test(httptest.NewRequest(http.MethodGet, path, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := readBody(t, response)
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK || !strings.Contains(body, expected) {
+			t.Fatalf("%s status=%d body=%q", path, response.StatusCode, body)
+		}
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		response, err := app.Test(httptest.NewRequest(method, "/api/missing", nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s 未知 API status=%d", method, response.StatusCode)
+		}
 	}
 }

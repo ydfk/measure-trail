@@ -51,19 +51,33 @@
             "maxLength": 128,
             "type": "string"
           },
-          "email": {
-            "format": "email",
+          "password": {
+            "maxLength": 128,
+            "minLength": 6,
             "type": "string"
           },
-          "password": {
-            "minLength": 12,
+          "username": {
+            "maxLength": 32,
+            "minLength": 3,
             "type": "string"
           }
         },
         "required": [
-          "email",
+          "username",
           "password",
           "deviceLabel"
+        ],
+        "type": "object"
+      },
+      "CredentialsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "username"
         ],
         "type": "object"
       },
@@ -84,19 +98,6 @@
         "required": [
           "expectedVersion",
           "clientMutationId"
-        ],
-        "type": "object"
-      },
-      "EmailInputBody": {
-        "additionalProperties": false,
-        "properties": {
-          "email": {
-            "format": "email",
-            "type": "string"
-          }
-        },
-        "required": [
-          "email"
         ],
         "type": "object"
       },
@@ -423,24 +424,6 @@
         ],
         "type": "object"
       },
-      "ResetPasswordInputBody": {
-        "additionalProperties": false,
-        "properties": {
-          "password": {
-            "minLength": 12,
-            "type": "string"
-          },
-          "token": {
-            "minLength": 20,
-            "type": "string"
-          }
-        },
-        "required": [
-          "token",
-          "password"
-        ],
-        "type": "object"
-      },
       "Response": {
         "additionalProperties": false,
         "properties": {
@@ -563,6 +546,28 @@
         ],
         "type": "object"
       },
+      "UpdateCredentialsInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "currentPassword": {
+            "maxLength": 128,
+            "minLength": 6,
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 32,
+            "type": "string"
+          }
+        },
+        "required": [
+          "currentPassword"
+        ],
+        "type": "object"
+      },
       "UpdateMeasurementInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -597,19 +602,6 @@
           "weightG",
           "expectedVersion",
           "clientMutationId"
-        ],
-        "type": "object"
-      },
-      "VerifyInputBody": {
-        "additionalProperties": false,
-        "properties": {
-          "token": {
-            "minLength": 20,
-            "type": "string"
-          }
-        },
-        "required": [
-          "token"
         ],
         "type": "object"
       }
@@ -782,6 +774,157 @@
           }
         ],
         "summary": "绑定 Apple 登录",
+        "tags": [
+          "账号"
+        ]
+      }
+    },
+    "/api/v1/account/credentials": {
+      "get": {
+        "operationId": "get-account-credentials",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialsOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "读取登录用户名",
+        "tags": [
+          "账号"
+        ]
+      },
+      "patch": {
+        "operationId": "update-account-credentials",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCredentialsInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "修改用户名或密码",
         "tags": [
           "账号"
         ]
@@ -1000,40 +1143,6 @@
         ]
       }
     },
-    "/api/v1/auth/forgot-password": {
-      "post": {
-        "operationId": "forgot-password",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EmailInputBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No Content"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "请求重置密码",
-        "tags": [
-          "认证"
-        ]
-      }
-    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login",
@@ -1145,148 +1254,6 @@
           }
         },
         "summary": "轮换登录会话",
-        "tags": [
-          "认证"
-        ]
-      }
-    },
-    "/api/v1/auth/register": {
-      "post": {
-        "operationId": "register",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CredentialsInputBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No Content"
-          },
-          "400": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "422": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "500": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          },
-          "503": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "注册账号（默认关闭）",
-        "tags": [
-          "认证"
-        ]
-      }
-    },
-    "/api/v1/auth/resend-verification": {
-      "post": {
-        "operationId": "resend-verification",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EmailInputBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No Content"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "重发验证邮件",
-        "tags": [
-          "认证"
-        ]
-      }
-    },
-    "/api/v1/auth/reset-password": {
-      "post": {
-        "operationId": "reset-password",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ResetPasswordInputBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No Content"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "重置密码",
         "tags": [
           "认证"
         ]
@@ -1418,40 +1385,6 @@
           }
         ],
         "summary": "撤销指定会话",
-        "tags": [
-          "认证"
-        ]
-      }
-    },
-    "/api/v1/auth/verify-email": {
-      "post": {
-        "operationId": "verify-email",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/VerifyInputBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No Content"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "验证邮箱",
         "tags": [
           "认证"
         ]

@@ -12,7 +12,7 @@ Phase 2 至 Phase 4 的服务基础设施、认证、资料、记录、增量同
 - 错误使用 RFC 7807 Problem JSON，至少包含 `type`、`title` 与 `status`。
 - 受保护操作在 OpenAPI 3.1 与 3.0 快照中声明 `bearerAuth`（JWT）。缺失或无效的 `Authorization: Bearer <access-token>` 会返回 `401` Problem JSON，而不是参数校验错误。
 - 浏览器客户端 CORS 来源由 `MEASURETRAIL_CORS_ORIGINS`（逗号分隔）独立配置，未设置时默认使用 `MEASURETRAIL_PUBLIC_BASE_URL`。生产环境只接受 HTTPS origin；预检允许 `GET`、`POST`、`PUT`、`PATCH`、`DELETE` 与 `OPTIONS`，其中 `PUT` 用于按日期创建或更新记录。
-- iOS 首次登录前由用户填写自托管 HTTPS 基础地址（不可包含路径、查询参数或账号信息），客户端只有在 `GET /api/health` 成功后才保存并启用认证入口。
+- iOS 由构建配置选择服务地址，不向用户显示服务器输入框。Debug 模拟器默认使用本机服务，真机与 Release 默认使用正式 HTTPS 地址。
 
 ## 已实现端点
 
@@ -36,11 +36,15 @@ Phase 2 至 Phase 4 的服务基础设施、认证、资料、记录、增量同
 
 ### 认证与账号
 
-认证端点以 [`../backend/openapi/openapi-3.0.json`](../backend/openapi/openapi-3.0.json) 为跨端稳定快照：包括邮箱注册/验证/重置、密码登录、会话刷新与撤销、Sign in with Apple 一次性 nonce、登录与绑定、以及账号删除。
+认证端点以 [`../backend/openapi/openapi-3.0.json`](../backend/openapi/openapi-3.0.json) 为跨端稳定快照：包括用户名密码登录、会话刷新与撤销、Sign in with Apple 一次性 nonce、已有身份登录与绑定、登录凭证修改，以及账号删除。
 
 Apple 登录由服务端校验 Apple 签名、发行方、受众、过期时间和一次性 nonce。生产部署必须配置 `MEASURETRAIL_APPLE_CLIENT_ID`；未配置时端点以 `503` 明确拒绝，不会降级为不验证的客户端登录。
 
-注册默认关闭：`POST /api/v1/auth/register` 返回 `403`，Apple 登录也仅允许已有绑定身份，首次开户返回 `403`。需要重新开放时设置 `MEASURETRAIL_REGISTRATION_ENABLED=true` 并重启服务；已有账号的邮箱登录、Apple 登录、密码重置和绑定不受影响。
+服务启动时确保一个默认账号存在。首次创建使用 `MEASURETRAIL_DEFAULT_USERNAME` 与 `MEASURETRAIL_DEFAULT_PASSWORD`，默认值分别为 `admin` 和 `111111`；创建后数据库中的账号身份为准，重启不会覆盖用户之后的修改。
+
+`POST /api/v1/auth/register`、邮箱验证和邮箱找回密码端点均不存在。`POST /api/v1/auth/login` 接受 `username`、`password` 和设备标签。Apple 登录只允许已绑定到现有账号的身份，未知身份返回 `403`，不会自动开户。
+
+`GET /api/v1/account/credentials` 返回当前用户名。`PATCH /api/v1/account/credentials` 要求当前密码，并接受新的 `username` 和/或 `password`；成功后撤销该账号的所有 Refresh Token，客户端需重新登录。用户名不区分大小写，长度 3 至 32，只允许字母、数字、点、下划线和连字符；密码长度 6 至 128。
 
 ### 资料、记录与统计
 
@@ -51,7 +55,7 @@ Apple 登录由服务端校验 Apple 签名、发行方、受众、过期时间�
 - `GET` / `PATCH` / `DELETE /api/v1/measurements/{id}`
 - `GET /api/v1/statistics?range=7d|30d|90d|all`
 
-资料、记录、统计、导出、会话管理、Apple 绑定和账号删除端点均要求 Bearer access token，并始终由服务端从 token 推导用户身份；注册、登录、刷新、邮箱验证和健康检查等公开端点不要求该 token。记录采用克和毫米作为存储单位；编辑与删除携带 `expectedVersion`，并在版本冲突时返回 `409`。客户端收到 `409` 后以 `GET /api/v1/measurements/{id}` 读取当前云端版本，再让用户决定采用云端内容或基于该版本重试本机修改。短暂 SQLite 锁冲突会在服务端有界重试；重试耗尽时资料和记录写端点返回可重试的 `503` Problem JSON，客户端应保留 Outbox，稍后重试而不是提示字段错误。`PUT /api/v1/measurements/by-date/{date}` 只用于尚无服务端 ID 的新建：同日非删除记录已经存在且 mutation id 未处理时必须返回 `409`，不得通过 `PUT` 静默覆盖另一设备的更新；已同步记录的编辑必须使用 `PATCH`。
+资料、记录、统计、导出、会话管理、凭证修改、Apple 绑定和账号删除端点均要求 Bearer access token，并始终由服务端从 token 推导用户身份；登录、刷新、Apple nonce 和健康检查等公开端点不要求该 token。记录采用克和毫米作为存储单位；编辑与删除携带 `expectedVersion`，并在版本冲突时返回 `409`。客户端收到 `409` 后以 `GET /api/v1/measurements/{id}` 读取当前云端版本，再让用户决定采用云端内容或基于该版本重试本机修改。短暂 SQLite 锁冲突会在服务端有界重试；重试耗尽时资料和记录写端点返回可重试的 `503` Problem JSON，客户端应保留 Outbox，稍后重试而不是提示字段错误。`PUT /api/v1/measurements/by-date/{date}` 只用于尚无服务端 ID 的新建：同日非删除记录已经存在且 mutation id 未处理时必须返回 `409`，不得通过 `PUT` 静默覆盖另一设备的更新；已同步记录的编辑必须使用 `PATCH`。
 
 ### 增量同步
 

@@ -2,24 +2,17 @@ name: measuretrail
 
 services:
   api:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: ${MEASURETRAIL_IMAGE:-ydfk/measure-trail:latest}
     restart: unless-stopped
     env_file:
-      - path: .env
-        required: false
+      - ${MEASURETRAIL_ENV_FILE:-.env.production}
     ports:
-      - "21000:21000"
+      - "${MEASURETRAIL_HOST_PORT:-21000}:21000"
     environment:
-      MEASURETRAIL_ENV: ${MEASURETRAIL_ENV:-production}
       MEASURETRAIL_API_PORT: "21000"
-      MEASURETRAIL_PUBLIC_BASE_URL: ${MEASURETRAIL_PUBLIC_BASE_URL:-http://localhost:21000}
       MEASURETRAIL_SQLITE_PATH: /app/data/measuretrail.sqlite
       MEASURETRAIL_SQLITE_BUSY_TIMEOUT_MS: "5000"
       MEASURETRAIL_WEB_ROOT: /app/web
-      MEASURETRAIL_DEFAULT_USERNAME: ${MEASURETRAIL_DEFAULT_USERNAME:-admin}
-      MEASURETRAIL_DEFAULT_PASSWORD: ${MEASURETRAIL_DEFAULT_PASSWORD:-111111}
     volumes:
       - measuretrail-data:/app/data
       - measuretrail-log:/app/log

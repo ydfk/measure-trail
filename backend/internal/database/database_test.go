@@ -35,4 +35,11 @@ func TestOpenAppliesSQLitePragmasAndMigrations(t *testing.T) {
 	if migrationCount != len(migrations) {
 		t.Fatalf("migration count = %d, want %d", migrationCount, len(migrations))
 	}
+	var usernameColumns int
+	if err := db.Raw("SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'username'").Scan(&usernameColumns).Error; err != nil {
+		t.Fatalf("检查 username 列: %v", err)
+	}
+	if usernameColumns != 1 {
+		t.Fatal("users 表缺少 username 列")
+	}
 }

@@ -127,19 +127,18 @@ func validApplePrivateKey(t *testing.T) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encoded}))
 }
 
-func TestRegistrationDefaultsClosedAndCanBeEnabled(t *testing.T) {
-	t.Setenv("MEASURETRAIL_REGISTRATION_ENABLED", "")
+func TestDefaultCredentialsCanBeOverridden(t *testing.T) {
+	t.Setenv("MEASURETRAIL_DEFAULT_USERNAME", "operator")
+	t.Setenv("MEASURETRAIL_DEFAULT_PASSWORD", "654321")
 	loaded, err := Load()
-	if err != nil || loaded.Auth.RegistrationEnabled {
-		t.Fatalf("注册应默认关闭: config=%v, error=%v", loaded.Auth.RegistrationEnabled, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Setenv("MEASURETRAIL_REGISTRATION_ENABLED", "true")
-	loaded, err = Load()
-	if err != nil || !loaded.Auth.RegistrationEnabled {
-		t.Fatalf("无法显式启用注册: error=%v", err)
+	if loaded.Auth.DefaultUsername != "operator" || loaded.Auth.DefaultPassword != "654321" {
+		t.Fatalf("默认凭证未读取环境变量: %#v", loaded.Auth)
 	}
-	t.Setenv("MEASURETRAIL_REGISTRATION_ENABLED", "invalid")
+	t.Setenv("MEASURETRAIL_DEFAULT_PASSWORD", "123")
 	if _, err := Load(); err == nil {
-		t.Fatal("无效开关应返回配置错误")
+		t.Fatal("过短默认密码应返回配置错误")
 	}
 }

@@ -5,17 +5,35 @@ struct HistoryView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \CachedMeasurement.recordedOn, order: .reverse) private var measurements: [CachedMeasurement]
     @State private var showingRecord = false
+    @State private var selectedFilter = HistoryFilter.all
+    @State private var searchText = ""
 
     private var visibleMeasurements: [CachedMeasurement] { measurements.filter { !$0.isDeleted || $0.syncState == "conflict" } }
+    private var filteredMeasurements: [CachedMeasurement] {
+        visibleMeasurements.filter { measurement in
+            selectedFilter.matches(recordedOn: measurement.recordedOn, waistMM: measurement.waistMM, note: measurement.note) && matchesSearch(measurement)
+        }
+    }
 
     var body: some View {
         NavigationStack {
             Group {
                 if visibleMeasurements.isEmpty {
                     ContentUnavailableView("还没有历史记录", systemImage: "list.bullet.rectangle", description: Text("每次记录都会在这里沉淀为清晰的时间线。"))
+                } else if filteredMeasurements.isEmpty {
+                    ContentUnavailableView {
+                        Label("没有符合条件的记录", systemImage: "line.3.horizontal.decrease.circle")
+                    } description: {
+                        Text("可以更换筛选条件或清除搜索内容。")
+                    } actions: {
+                        Button("清除筛选") {
+                            selectedFilter = .all
+                            searchText = ""
+                        }
+                    }
                 } else {
                     List {
-                        ForEach(visibleMeasurements) { measurement in
+                        ForEach(filteredMeasurements) { measurement in
                             NavigationLink { MeasurementDetailView(measurement: measurement) } label: { MeasurementRow(measurement: measurement) }
                         }
                         .onDelete(perform: delete)
@@ -23,14 +41,29 @@ struct HistoryView: View {
                 }
             }
             .navigationTitle("历史")
-            .toolbar { ToolbarItem(placement: .primaryAction) { Button { showingRecord = true } label: { Label("补记", systemImage: "plus") } } }
+            .searchable(text: $searchText, prompt: "搜索备注、日期或数值")
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Menu {
+                        Picker("筛选记录", selection: $selectedFilter) {
+                            ForEach(HistoryFilter.allCases) { filter in
+                                Label(filter.title, systemImage: filter.symbol).tag(filter)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: selectedFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    }
+                    .accessibilityLabel("筛选历史记录")
+                    Button { showingRecord = true } label: { Label("补记", systemImage: "plus") }
+                }
+            }
             .sheet(isPresented: $showingRecord) { RecordSheet() }
         }
     }
 
     private func delete(at offsets: IndexSet) {
         for index in offsets {
-            let measurement = visibleMeasurements[index]
+            let measurement = filteredMeasurements[index]
             if measurement.syncState == "pending" {
                 let measurementID = measurement.id
                 let descriptor = FetchDescriptor<PendingMutation>(predicate: #Predicate { $0.measurementID == measurementID })
@@ -44,15 +77,83 @@ struct HistoryView: View {
         }
         try? modelContext.save()
     }
+
+    private func matchesSearch(_ measurement: CachedMeasurement) -> Bool {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return true }
+        let values = [
+            measurement.note,
+            measurement.recordedOn.formatted(date: .numeric, time: .omitted),
+            WeightUnit.display(measurement.weightG),
+            measurement.waistMM.map { "\(Double($0) / 10) cm" } ?? "",
+        ]
+        return values.contains { $0.localizedCaseInsensitiveContains(query) }
+    }
+}
+
+enum HistoryFilter: String, CaseIterable, Identifiable {
+    case all
+    case recent30Days
+    case withWaist
+    case withNote
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all: "全部记录"
+        case .recent30Days: "近 30 天"
+        case .withWaist: "有腰围"
+        case .withNote: "有备注"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .all: "list.bullet"
+        case .recent30Days: "calendar"
+        case .withWaist: "ruler"
+        case .withNote: "note.text"
+        }
+    }
+
+    func matches(recordedOn: Date, waistMM: Int?, note: String, referenceDate: Date = .now, calendar: Calendar = .current) -> Bool {
+        switch self {
+        case .all:
+            true
+        case .recent30Days:
+            recordedOn >= (calendar.date(byAdding: .day, value: -29, to: calendar.startOfDay(for: referenceDate)) ?? .distantPast)
+        case .withWaist:
+            waistMM != nil
+        case .withNote:
+            !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
 }
 
 private struct MeasurementRow: View {
     let measurement: CachedMeasurement
     var body: some View {
-        HStack {
-            VStack(alignment: .leading) { Text(measurement.recordedOn, format: .dateTime.year().month().day()).font(.headline); Text(syncDescription).font(.caption).foregroundStyle(measurement.syncState == "conflict" ? .orange : .secondary) }
-            Spacer()
-            Text(WeightUnit.display(measurement.weightG)).monospacedDigit().font(.title3.weight(.semibold))
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(measurement.recordedOn, format: .dateTime.year().month().day()).font(.headline)
+                Spacer()
+                Text(WeightUnit.display(measurement.weightG)).monospacedDigit().font(.title3.weight(.semibold))
+            }
+            if let waistMM = measurement.waistMM {
+                Label("腰围 \(Double(waistMM) / 10, format: .number.precision(.fractionLength(1))) cm", systemImage: "ruler")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            if !measurement.note.isEmpty {
+                Text(measurement.note)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+            }
+            Text(syncDescription)
+                .font(.caption)
+                .foregroundStyle(measurement.syncState == "conflict" ? .orange : .secondary)
         }
         .accessibilityElement(children: .combine)
     }
