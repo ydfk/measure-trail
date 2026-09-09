@@ -21,4 +21,9 @@ final class HistoryFilterTests: XCTestCase {
         XCTAssertTrue(HistoryFilter.recent30Days.matches(recordedOn: firstIncludedDate, waistMM: nil, note: "", referenceDate: referenceDate, calendar: calendar))
         XCTAssertFalse(HistoryFilter.recent30Days.matches(recordedOn: excludedDate, waistMM: nil, note: "", referenceDate: referenceDate, calendar: calendar))
     }
+
+    func testHistoryPaginationLoadsThirtyMoreRecordsAtATime() {
+        XCTAssertEqual(HistoryPagination.nextVisibleCount(current: 30, total: 95), 60)
+        XCTAssertEqual(HistoryPagination.nextVisibleCount(current: 90, total: 95), 95)
+    }
 }

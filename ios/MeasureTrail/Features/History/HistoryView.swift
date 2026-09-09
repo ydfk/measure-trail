@@ -7,6 +7,7 @@ struct HistoryView: View {
     @State private var showingRecord = false
     @State private var selectedFilter = HistoryFilter.all
     @State private var searchText = ""
+    @State private var visibleCount = HistoryPagination.pageSize
 
     private var visibleMeasurements: [CachedMeasurement] { measurements.filter { !$0.isDeleted || $0.syncState == "conflict" } }
     private var filteredMeasurements: [CachedMeasurement] {
@@ -14,6 +15,8 @@ struct HistoryView: View {
             selectedFilter.matches(recordedOn: measurement.recordedOn, waistMM: measurement.waistMM, note: measurement.note) && matchesSearch(measurement)
         }
     }
+    private var pagedMeasurements: [CachedMeasurement] { Array(filteredMeasurements.prefix(visibleCount)) }
+    private var hasMorePages: Bool { pagedMeasurements.count < filteredMeasurements.count }
 
     var body: some View {
         NavigationStack {
@@ -33,15 +36,35 @@ struct HistoryView: View {
                     }
                 } else {
                     List {
-                        ForEach(filteredMeasurements) { measurement in
+                        ForEach(pagedMeasurements) { measurement in
                             NavigationLink { MeasurementDetailView(measurement: measurement) } label: { MeasurementRow(measurement: measurement) }
+                                .onAppear { loadNextPageIfNeeded(appearing: measurement) }
                         }
                         .onDelete(perform: delete)
+                        if hasMorePages {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                Text("继续向下滑动以加载更多")
+                            }
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .listRowSeparator(.hidden)
+                            .accessibilityLabel("继续滑动可加载更多历史记录")
+                        } else if filteredMeasurements.count > HistoryPagination.pageSize {
+                            Text("已显示全部 \(filteredMeasurements.count) 条记录")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .listRowSeparator(.hidden)
+                        }
                     }
                 }
             }
             .navigationTitle("历史")
             .searchable(text: $searchText, prompt: "搜索备注、日期或数值")
+            .onChange(of: selectedFilter) { _, _ in resetPagination() }
+            .onChange(of: searchText) { _, _ in resetPagination() }
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Menu {
@@ -63,7 +86,7 @@ struct HistoryView: View {
 
     private func delete(at offsets: IndexSet) {
         for index in offsets {
-            let measurement = filteredMeasurements[index]
+            let measurement = pagedMeasurements[index]
             if measurement.syncState == "pending" {
                 let measurementID = measurement.id
                 let descriptor = FetchDescriptor<PendingMutation>(predicate: #Predicate { $0.measurementID == measurementID })
@@ -78,6 +101,16 @@ struct HistoryView: View {
         try? modelContext.save()
     }
 
+    private func resetPagination() {
+        visibleCount = HistoryPagination.pageSize
+    }
+
+    private func loadNextPageIfNeeded(appearing measurement: CachedMeasurement) {
+        let loadThreshold = pagedMeasurements.suffix(3).map(\.id)
+        guard loadThreshold.contains(measurement.id), hasMorePages else { return }
+        visibleCount = HistoryPagination.nextVisibleCount(current: visibleCount, total: filteredMeasurements.count)
+    }
+
     private func matchesSearch(_ measurement: CachedMeasurement) -> Bool {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return true }
@@ -88,6 +121,14 @@ struct HistoryView: View {
             measurement.waistMM.map { "\(Double($0) / 10) cm" } ?? "",
         ]
         return values.contains { $0.localizedCaseInsensitiveContains(query) }
+    }
+}
+
+enum HistoryPagination {
+    static let pageSize = 30
+
+    static func nextVisibleCount(current: Int, total: Int) -> Int {
+        min(current + pageSize, total)
     }
 }
 
